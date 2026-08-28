@@ -43,6 +43,7 @@ jobs:
         with:
           name: junit-test-reports
           path: app/build/reports/tests/
+          if-no-files-found: ignore
           retention-days: 7
 
   build-apk:
@@ -73,4 +74,5 @@ jobs:
         with:
           name: shollu-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
           retention-days: 14
