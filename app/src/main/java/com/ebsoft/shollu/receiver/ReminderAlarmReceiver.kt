@@ -12,6 +12,9 @@ import androidx.core.app.NotificationCompat
 import com.ebsoft.shollu.R
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class ReminderAlarmReceiver : BroadcastReceiver() {
 
@@ -75,9 +78,9 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         // Reschedule next recurrence in background with goAsync() lifecycle protection
         val pendingResult = goAsync()
         val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
-        scope.launch {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             try {
-                val db = com.ebsoft.shollu.data.db.SholluDatabase.getDatabase(context, this)
+                val db = com.ebsoft.shollu.data.db.SholluDatabase.getDatabase(context, scope)
                 val reminder = db.reminderDao().getReminderById(reminderId)
                 if (reminder != null && reminder.isEnabled) {
                     if (reminder.daysOfWeek.isOnce) {

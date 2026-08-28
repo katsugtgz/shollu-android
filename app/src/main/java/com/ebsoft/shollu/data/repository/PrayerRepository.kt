@@ -59,14 +59,15 @@ class PrayerRepository(
         preferences.asrJuristic,
         preferences.ihtiyatMinutes,
         preferences.customOffsets
-    ) { date, city, method, juristic, ihtiyat, offsets ->
+    ) { args: Array<Any?> ->
+        @Suppress("UNCHECKED_CAST")
         calculateForDate(
-            date = date,
-            city = city,
-            method = method,
-            juristic = juristic,
-            ihtiyat = ihtiyat,
-            offsets = offsets
+            date = args[0] as LocalDate,
+            city = args[1] as City,
+            method = args[2] as CalculationMethod,
+            juristic = args[3] as AsrJuristic,
+            ihtiyat = args[4] as Int,
+            offsets = args[5] as Map<String, Int>
         )
     }
 

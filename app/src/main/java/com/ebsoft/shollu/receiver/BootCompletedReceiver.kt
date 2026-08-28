@@ -35,7 +35,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
                     val isOngoingEnabled = preferences.isOngoingNotificationEnabled.first()
                     if (isOngoingEnabled) {
                         val ongoingIntent = Intent(context, OngoingNotificationService::class.java).apply {
-                            action = OngoingNotificationService.ACTION_START_ONGOING
+                            this.action = OngoingNotificationService.ACTION_START_ONGOING
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             context.startForegroundService(ongoingIntent)
