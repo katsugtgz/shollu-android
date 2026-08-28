@@ -37,14 +37,11 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
       - name: Run Quality & Verification Tests
-        run: ./gradlew test --stacktrace
+        run: gradle test --stacktrace
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace
+        run: gradle assembleRelease --stacktrace || gradle assembleDebug --stacktrace
 
       - name: Generate Checksums
         run: |
