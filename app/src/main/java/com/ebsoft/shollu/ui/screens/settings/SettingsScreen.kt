@@ -8,7 +8,9 @@ import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -411,8 +413,11 @@ fun SettingsScreen(
             onDismissRequest = { showMethodDialog = false },
             title = { Text("Pilih Metode Hisab", fontWeight = FontWeight.Bold) },
             text = {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(CalculationMethod.values()) { method ->
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    CalculationMethod.values().forEach { method ->
                         Surface(
                             onClick = {
                                 coroutineScope.launch {

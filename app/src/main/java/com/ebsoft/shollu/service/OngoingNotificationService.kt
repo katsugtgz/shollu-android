@@ -78,8 +78,16 @@ class OngoingNotificationService : Service() {
                 preferences.asrJuristic,
                 preferences.ihtiyatMinutes,
                 preferences.customOffsets
-            ) { isEnabled, city, method, juristic, ihtiyat, offsets ->
-                OngoingConfig(isEnabled, city, method, juristic, ihtiyat, offsets)
+            ) { args: Array<Any?> ->
+                @Suppress("UNCHECKED_CAST")
+                OngoingConfig(
+                    isEnabled = args[0] as Boolean,
+                    city = args[1] as City,
+                    method = args[2] as CalculationMethod,
+                    juristic = args[3] as AsrJuristic,
+                    ihtiyat = args[4] as Int,
+                    offsets = args[5] as Map<String, Int>
+                )
             }.collectLatest { config ->
                 if (!config.isEnabled) {
                     stopOngoingCountdown()
