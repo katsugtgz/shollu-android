@@ -89,7 +89,7 @@ class RepositoryAndSeamsTest {
     fun testFakePrayerRepositoryContract() {
         // Implement fake repository to verify IPrayerRepository contract polymorphic conformance
         val fakeRepo = object : IPrayerRepository {
-            private val testCity = City("Jakarta", "DKI", "ID", -6.2088, 106.8456, 8.0, 7.0)
+            private val testCity = City(name = "Jakarta", province = "DKI", country = "ID", latitude = -6.2088, longitude = 106.8456, elevation = 8.0, timezone = 7.0)
             private val cache = mutableMapOf<LocalDate, PrayerTimes>()
 
             override val todayPrayerTimes: Flow<PrayerTimes>
@@ -147,7 +147,7 @@ class RepositoryAndSeamsTest {
         }
 
         val august2026 = YearMonth.of(2026, 8)
-        val city = City("Jakarta", "DKI", "ID", -6.2088, 106.8456, 8.0, 7.0)
+        val city = City(name = "Jakarta", province = "DKI", country = "ID", latitude = -6.2088, longitude = 106.8456, elevation = 8.0, timezone = 7.0)
         val schedule = fakeRepo.getMonthlySchedule(
             yearMonth = august2026,
             city = city,
