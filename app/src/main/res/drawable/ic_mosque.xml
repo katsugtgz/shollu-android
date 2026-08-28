@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+  <!-- Dome -->
+  <path
+      android:fillColor="#0D6A53"
+      android:pathData="M24,6 C16,14 14,24 14,28 L34,28 C34,24 32,14 24,6 Z"/>
+  <!-- Minarets & Building -->
+  <path
+      android:fillColor="#0D6A53"
+      android:pathData="M14,30 L34,30 L34,42 L14,42 Z M6,18 L10,18 L10,42 L6,42 Z M38,18 L42,18 L42,42 L38,42 Z M8,12 L8,18 L6,18 L8,12 Z M40,12 L40,18 L38,18 L40,12 Z"/>
+  <!-- Crescent & Star -->
+  <path
+      android:fillColor="#D4AF37"
+      android:pathData="M24,2 L25,4 L27,4 L25.5,5.5 L26,7.5 L24,6.2 L22,7.5 L22.5,5.5 L21,4 L23,4 Z"/>
+</vector>

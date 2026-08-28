@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="260dp"
+    android:height="260dp"
+    android:viewportWidth="260"
+    android:viewportHeight="260">
+  <!-- Outer Ring -->
+  <path
+      android:strokeColor="#0D6A53"
+      android:strokeWidth="4"
+      android:pathData="M130,10 A120,120 0 1,0 130,250 A120,120 0 1,0 130,10 Z"/>
+  <!-- Inner Ring -->
+  <path
+      android:strokeColor="#D4AF37"
+      android:strokeWidth="2"
+      android:pathData="M130,25 A105,105 0 1,0 130,235 A105,105 0 1,0 130,25 Z"/>
+  <!-- Center Point -->
+  <path
+      android:fillColor="#0D6A53"
+      android:pathData="M130,125 A5,5 0 1,0 130,135 A5,5 0 1,0 130,125 Z"/>
+</vector>

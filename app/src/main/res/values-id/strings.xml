@@ -1,0 +1,107 @@
+<resources>
+    <string name="app_name">Shollu</string>
+    <string name="app_tagline">Pengingat Waktu Sholat &amp; Agenda Islami</string>
+    <string name="widget_description">Menampilkan hitung mundur waktu sholat dan tabel jadwal harian</string>
+
+    <!-- Navigasi -->
+    <string name="nav_home">Beranda</string>
+    <string name="nav_calendar">Kalender</string>
+    <string name="nav_scheduler">Pengingat</string>
+    <string name="nav_qibla">Kiblat</string>
+    <string name="nav_settings">Pengaturan</string>
+
+    <!-- Nama Sholat -->
+    <string name="prayer_imsak">Imsak</string>
+    <string name="prayer_subuh">Subuh</string>
+    <string name="prayer_terbit">Terbit</string>
+    <string name="prayer_dhuha">Dhuha</string>
+    <string name="prayer_dzuhur">Dzuhur</string>
+    <string name="prayer_ashar">Ashar</string>
+    <string name="prayer_maghrib">Maghrib</string>
+    <string name="prayer_isya">Isya</string>
+
+    <!-- Beranda -->
+    <string name="next_prayer">Sholat Berikutnya</string>
+    <string name="time_remaining">Menuju Waktu</string>
+    <string name="today_schedule">Jadwal Sholat Hari Ini</string>
+    <string name="change_location">Ganti Kota / Lokasi</string>
+    <string name="qibla_direction">Arah Kiblat</string>
+    <string name="export_schedule">Ekspor Jadwal Sholat</string>
+
+    <!-- Notifikasi & Alarm -->
+    <string name="channel_prayer_alarm">Alarm Waktu Sholat</string>
+    <string name="channel_prayer_alarm_desc">Peringatan prioritas tinggi dengan getar maksimal saat masuk waktu sholat</string>
+    <string name="channel_ongoing_countdown">Status Bar Countdown Berkelanjutan</string>
+    <string name="channel_ongoing_countdown_desc">Notifikasi status bar persisten hitung mundur sholat berikutnya</string>
+    <string name="channel_scheduler">Alarm Agenda Islami</string>
+    <string name="channel_scheduler_desc">Pengingat Al-Kahfi, Puasa Sunnah, dan agenda kustom</string>
+
+    <string name="prayer_time_arrived">Telah masuk waktu %s (%s)</string>
+    <string name="pre_prayer_warning">Waktu %s sekitar %d menit lagi</string>
+    <string name="ongoing_notif_title">Shollu: Waktu %s (%s)</string>
+    <string name="ongoing_notif_text">%s lagi (%s)</string>
+    <string name="dismiss">Tutup</string>
+    <string name="snooze">Tunda (5 mnt)</string>
+    <string name="stop_vibration">Hentikan Getar</string>
+
+    <!-- Pengingat / Scheduler -->
+    <string name="scheduler_title">Pengingat Islami (Scheduler)</string>
+    <string name="scheduler_subtitle">Agenda Shollu &amp; Pengingat Sunnah</string>
+    <string name="preset_alkahfi_title">Membaca Surat Al-Kahfi</string>
+    <string name="preset_alkahfi_desc">Setiap Jumat pagi - cahaya penerang antara dua Jumat</string>
+    <string name="preset_senin_kamis_title">Puasa Sunnah Senin &amp; Kamis</string>
+    <string name="preset_senin_kamis_desc">Pengingat malam sebelumnya atau waktu Sahur</string>
+    <string name="preset_ayyamul_bidh_title">Puasa Ayyamul Bidh</string>
+    <string name="preset_ayyamul_bidh_desc">Setiap tanggal 13, 14, 15 bulan Hijriyah</string>
+    <string name="preset_tahajjud_title">Sholat Tahajjud (Qiyamullail)</string>
+    <string name="preset_tahajjud_desc">45 menit sebelum masuk waktu Subuh</string>
+    <string name="preset_dhuha_title">Sholat Dhuha</string>
+    <string name="preset_dhuha_desc">Pengingat pagi hari pukul 08:30</string>
+    <string name="add_custom_reminder">Tambah Pengingat Kustom</string>
+    <string name="reminder_title">Judul Pengingat</string>
+    <string name="reminder_notes">Catatan / Ayat / Doa</string>
+    <string name="reminder_time">Waktu Pengingat</string>
+    <string name="save">Simpan</string>
+    <string name="cancel">Batal</string>
+    <string name="delete">Hapus</string>
+
+    <!-- Kiblat -->
+    <string name="qibla_title">Arah Kiblat</string>
+    <string name="qibla_bearing">Arah Ka\'bah: %1$.1f°</string>
+    <string name="device_heading">Kompas: %1$.1f°</string>
+    <string name="qibla_aligned">Tepat Menghadap Ka\'bah!</string>
+    <string name="sensor_accuracy_warning">Gerakkan HP membentuk angka 8 untuk kalibrasi sensor kompas</string>
+
+    <!-- Kalender -->
+    <string name="calendar_title">Kalender Hijriyah &amp; Masehi</string>
+    <string name="hijri_converter">Konversi Penanggalan</string>
+    <string name="gregorian_to_hijri">Masehi ke Hijriyah</string>
+    <string name="hijri_to_gregorian">Hijriyah ke Masehi</string>
+    <string name="upcoming_events">Hari Besar &amp; Momen Islami</string>
+
+    <!-- Pengaturan -->
+    <string name="settings_title">Pengaturan</string>
+    <string name="section_location">Lokasi &amp; Koordinat Kota</string>
+    <string name="section_calculation">Metode Hisab Waktu Sholat</string>
+    <string name="section_notification">Notifikasi &amp; Getar (Vibration)</string>
+    <string name="section_appearance">Tema &amp; Bahasa</string>
+    <string name="section_widgets">Widget &amp; Dropzone</string>
+
+    <string name="setting_ongoing_notif">Status Bar Notifikasi Hitung Mundur</string>
+    <string name="setting_ongoing_notif_desc">Tampilkan hitung mundur waktu sholat di notification shade (tidak bisa diswipe, hanya mati via tombol ini)</string>
+    <string name="setting_max_vibration">Getar Intensitas Maksimal</string>
+    <string name="setting_max_vibration_desc">Pola denyut getar motor kuat dan berulang saat waktu sholat tiba</string>
+    <string name="setting_pre_prayer">Pengingat Sebelum Masuk Waktu</string>
+    <string name="setting_pre_prayer_desc">Peringatan 10 menit sebelum waktu sholat tiba</string>
+    <string name="setting_iqomah_timer">Hitung Mundur Iqomah</string>
+    <string name="setting_iqomah_timer_desc">Tampilkan hitung mundur jeda sholat setelah adzan</string>
+    <string name="setting_asr_rule">Penetapan Waktu Ashar</string>
+    <string name="setting_ihtiyat">Ihtiyat / Koreksi Menit Pengaman (+/-)</string>
+    <string name="setting_hijri_adjustment">Penyesuaian Hari Hijriyah (+/- hari)</string>
+
+    <!-- Tema -->
+    <string name="theme_emerald">Klasik Shollu Hijau Zamrud</string>
+    <string name="theme_navy">Royal Navy &amp; Emas</string>
+    <string name="theme_amoled">Midnight AMOLED Hitam</string>
+    <string name="theme_dynamic">Dynamic Material You</string>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="shollu_emerald_primary">#0D6A53</color>
+    <color name="shollu_emerald_on_primary">#FFFFFF</color>
+    <color name="shollu_emerald_primary_container">#A3F2D4</color>
+    <color name="shollu_emerald_secondary">#4D6357</color>
+    <color name="shollu_emerald_tertiary">#3D6473</color>
+    <color name="shollu_gold_accent">#D4AF37</color>
+    <color name="shollu_gold_dark">#997915</color>
+    <color name="shollu_navy_primary">#1B3B6F</color>
+    <color name="shollu_navy_secondary">#21295C</color>
+    <color name="shollu_dark_bg">#121413</color>
+    <color name="shollu_dark_surface">#1A1C1B</color>
+</resources>

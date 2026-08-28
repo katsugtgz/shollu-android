@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+  <!-- North / Kaaba pointer (Gold/Green with Kaaba icon indicator) -->
+  <path
+      android:fillColor="#D4AF37"
+      android:pathData="M100,15 L112,100 L100,90 L88,100 Z"/>
+  <!-- South pointer -->
+  <path
+      android:fillColor="#718096"
+      android:pathData="M100,185 L112,100 L100,110 L88,100 Z"/>
+  <!-- Center Cap -->
+  <path
+      android:fillColor="#0D6A53"
+      android:pathData="M100,92 A8,8 0 1,0 100,108 A8,8 0 1,0 100,92 Z"/>
+</vector>

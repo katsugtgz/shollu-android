@@ -1,0 +1,107 @@
+<resources>
+    <string name="app_name">Shollu</string>
+    <string name="app_tagline">Islamic Prayer Reminder &amp; Scheduler</string>
+    <string name="widget_description">Shows next prayer countdown and daily prayer times schedule</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_scheduler">Scheduler</string>
+    <string name="nav_qibla">Qibla</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Prayer Names -->
+    <string name="prayer_imsak">Imsak</string>
+    <string name="prayer_subuh">Fajr</string>
+    <string name="prayer_terbit">Sunrise</string>
+    <string name="prayer_dhuha">Dhuha</string>
+    <string name="prayer_dzuhur">Dhuhr</string>
+    <string name="prayer_ashar">Asr</string>
+    <string name="prayer_maghrib">Maghrib</string>
+    <string name="prayer_isya">Isha</string>
+
+    <!-- Home Screen -->
+    <string name="next_prayer">Next Prayer</string>
+    <string name="time_remaining">Remaining</string>
+    <string name="today_schedule">Today\'s Schedule</string>
+    <string name="change_location">Change Location</string>
+    <string name="qibla_direction">Qibla Direction</string>
+    <string name="export_schedule">Export Schedule</string>
+
+    <!-- Notifications & Alarms -->
+    <string name="channel_prayer_alarm">Prayer Time Alarms</string>
+    <string name="channel_prayer_alarm_desc">High-priority alerts with maximum vibration for Islamic prayer times</string>
+    <string name="channel_ongoing_countdown">Ongoing Countdown Notification</string>
+    <string name="channel_ongoing_countdown_desc">Persistent status bar notification with next prayer live countdown</string>
+    <string name="channel_scheduler">Islamic Scheduler Alarms</string>
+    <string name="channel_scheduler_desc">Reminders for Al-Kahfi, fasting, and custom Islamic agendas</string>
+
+    <string name="prayer_time_arrived">It\'s time for %s (%s)</string>
+    <string name="pre_prayer_warning">%s will arrive in %d minutes</string>
+    <string name="ongoing_notif_title">Shollu: Next is %s at %s</string>
+    <string name="ongoing_notif_text">%s remaining (%s)</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="snooze">Snooze (5m)</string>
+    <string name="stop_vibration">Stop Vibration</string>
+
+    <!-- Scheduler -->
+    <string name="scheduler_title">Islamic Scheduler</string>
+    <string name="scheduler_subtitle">Shollu Agenda &amp; Sunnah Reminders</string>
+    <string name="preset_alkahfi_title">Read Surah Al-Kahf</string>
+    <string name="preset_alkahfi_desc">Every Friday morning - light between two Fridays</string>
+    <string name="preset_senin_kamis_title">Monday &amp; Thursday Fasting</string>
+    <string name="preset_senin_kamis_desc">Remind night before or during Sahur time</string>
+    <string name="preset_ayyamul_bidh_title">Ayyamul Bidh Fasting</string>
+    <string name="preset_ayyamul_bidh_desc">13th, 14th, 15th of each Hijri month</string>
+    <string name="preset_tahajjud_title">Tahajjud (Qiyamullail)</string>
+    <string name="preset_tahajjud_desc">45 minutes before Fajr prayer</string>
+    <string name="preset_dhuha_title">Dhuha Prayer</string>
+    <string name="preset_dhuha_desc">Daily morning reminder at 08:30</string>
+    <string name="add_custom_reminder">Add Custom Reminder</string>
+    <string name="reminder_title">Reminder Title</string>
+    <string name="reminder_notes">Notes / Ayat / Doa</string>
+    <string name="reminder_time">Reminder Time</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+
+    <!-- Qibla -->
+    <string name="qibla_title">Qibla Direction</string>
+    <string name="qibla_bearing">Kaaba Bearing: %1$.1f°</string>
+    <string name="device_heading">Heading: %1$.1f°</string>
+    <string name="qibla_aligned">Directly Facing Kaaba!</string>
+    <string name="sensor_accuracy_warning">Wave device in figure-8 motion to calibrate compass sensor</string>
+
+    <!-- Calendar -->
+    <string name="calendar_title">Hijri &amp; Gregorian Calendar</string>
+    <string name="hijri_converter">Date Converter</string>
+    <string name="gregorian_to_hijri">Gregorian to Hijri</string>
+    <string name="hijri_to_gregorian">Hijri to Gregorian</string>
+    <string name="upcoming_events">Upcoming Islamic Events</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="section_location">Location &amp; Coordinates</string>
+    <string name="section_calculation">Prayer Calculation Method</string>
+    <string name="section_notification">Notifications &amp; Vibration</string>
+    <string name="section_appearance">Theme &amp; Language</string>
+    <string name="section_widgets">Widgets &amp; Dropzone</string>
+
+    <string name="setting_ongoing_notif">Persistent Notification Shade Bar</string>
+    <string name="setting_ongoing_notif_desc">Show non-dismissible countdown timer to next prayer in notification bar</string>
+    <string name="setting_max_vibration">Maximum Vibration Intensity</string>
+    <string name="setting_max_vibration_desc">Strong continuous haptic pulse patterns when prayer time arrives</string>
+    <string name="setting_pre_prayer">Pre-Prayer Warning Alert</string>
+    <string name="setting_pre_prayer_desc">Alert 10 minutes before prayer time</string>
+    <string name="setting_iqomah_timer">Iqomah Countdown Timer</string>
+    <string name="setting_iqomah_timer_desc">Show countdown after prayer time arrives</string>
+    <string name="setting_asr_rule">Asr Calculation Rule</string>
+    <string name="setting_ihtiyat">Ihtiyat (Safety Minutes Offset)</string>
+    <string name="setting_hijri_adjustment">Hijri Date Adjustment (Days)</string>
+
+    <!-- Themes -->
+    <string name="theme_emerald">Classic Shollu Emerald</string>
+    <string name="theme_navy">Royal Navy &amp; Gold</string>
+    <string name="theme_amoled">Midnight AMOLED Black</string>
+    <string name="theme_dynamic">Dynamic Material You</string>
+</resources>

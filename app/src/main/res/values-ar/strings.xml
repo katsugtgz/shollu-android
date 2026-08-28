@@ -1,0 +1,107 @@
+<resources>
+    <string name="app_name">صلوا (Shollu)</string>
+    <string name="app_tagline">منبه مواقيت الصلاة والمذكر الإسلامي</string>
+    <string name="widget_description">يعرض العد التنازلي لمواقيت الصلاة وجدول الصلوات اليومي</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_calendar">التقويم</string>
+    <string name="nav_scheduler">المذكر</string>
+    <string name="nav_qibla">القبلة</string>
+    <string name="nav_settings">الإعدادات</string>
+
+    <!-- Prayer Names -->
+    <string name="prayer_imsak">الإمساك</string>
+    <string name="prayer_subuh">الفجر</string>
+    <string name="prayer_terbit">الشروق</string>
+    <string name="prayer_dhuha">الضحى</string>
+    <string name="prayer_dzuhur">الظهر</string>
+    <string name="prayer_ashar">العصر</string>
+    <string name="prayer_maghrib">المغرب</string>
+    <string name="prayer_isya">العشاء</string>
+
+    <!-- Home Screen -->
+    <string name="next_prayer">الصلاة القادمة</string>
+    <string name="time_remaining">الوقت المتبقي</string>
+    <string name="today_schedule">مواقيت الصلاة لليوم</string>
+    <string name="change_location">تغيير الموقع</string>
+    <string name="qibla_direction">اتجاه القبلة</string>
+    <string name="export_schedule">تصدير الجدول</string>
+
+    <!-- Notifications & Alarms -->
+    <string name="channel_prayer_alarm">تنبيهات مواقيت الصلاة</string>
+    <string name="channel_prayer_alarm_desc">تنبيهات عالية الأولوية مع اهتزاز قوي عند حلول وقت الصلاة</string>
+    <string name="channel_ongoing_countdown">إشعار العد التنازلي المستمر</string>
+    <string name="channel_ongoing_countdown_desc">إشعار دائم في شريط الحالة يعرض العد التنازلي للصلاة القادمة</string>
+    <string name="channel_scheduler">تنبيهات المذكر الإسلامي</string>
+    <string name="channel_scheduler_desc">تذكير سورة الكهف، صيام السنن، والمذكر المخصص</string>
+
+    <string name="prayer_time_arrived">حان الآن موعد صلاة %s (%s)</string>
+    <string name="pre_prayer_warning">بقي على موعد صلاة %s قرابة %d دقائق</string>
+    <string name="ongoing_notif_title">صلوا: الصلاة القادمة %s (%s)</string>
+    <string name="ongoing_notif_text">متبقي %s (%s)</string>
+    <string name="dismiss">إغلاق</string>
+    <string name="snooze">تأجيل (5 دقائق)</string>
+    <string name="stop_vibration">إيقاف الاهتزاز</string>
+
+    <!-- Scheduler -->
+    <string name="scheduler_title">المذكر الإسلامي</string>
+    <string name="scheduler_subtitle">الجدول والتذكير بالسنن</string>
+    <string name="preset_alkahfi_title">قراءة سورة الكهف</string>
+    <string name="preset_alkahfi_desc">كل يوم جمعة صباحاً - نور ما بين الجمعتين</string>
+    <string name="preset_senin_kamis_title">صيام الإثنين والخميس</string>
+    <string name="preset_senin_kamis_desc">تذكير في الليلة السابقة أو وقت السحور</string>
+    <string name="preset_ayyamul_bidh_title">صيام الأيام البيض</string>
+    <string name="preset_ayyamul_bidh_desc">الأيام 13 و 14 و 15 من كل شهر هجري</string>
+    <string name="preset_tahajjud_title">صلاة التهجد (قيام الليل)</string>
+    <string name="preset_tahajjud_desc">قبل 45 دقيقة من أذان الفجر</string>
+    <string name="preset_dhuha_title">صلاة الضحى</string>
+    <string name="preset_dhuha_desc">تذكير يومي في الساعة 08:30 صباحاً</string>
+    <string name="add_custom_reminder">إضافة مذكر مخصص</string>
+    <string name="reminder_title">عنوان المذكر</string>
+    <string name="reminder_notes">ملاحظات / أدعية</string>
+    <string name="reminder_time">وقت التذكير</string>
+    <string name="save">حفظ</string>
+    <string name="cancel">إلغاء</string>
+    <string name="delete">حذف</string>
+
+    <!-- Qibla -->
+    <string name="qibla_title">اتجاه القبلة</string>
+    <string name="qibla_bearing">زاوية الكعبة: %1$.1f°</string>
+    <string name="device_heading">البوصلة: %1$.1f°</string>
+    <string name="qibla_aligned">باتجاه الكعبة المشرفة مباشرة!</string>
+    <string name="sensor_accuracy_warning">حرك الجهاز على شكل رقم 8 لمعايرة البوصلة</string>
+
+    <!-- Calendar -->
+    <string name="calendar_title">التقويم الهجري والميلادي</string>
+    <string name="hijri_converter">تحويل التاريخ</string>
+    <string name="gregorian_to_hijri">الميلادي إلى الهجري</string>
+    <string name="hijri_to_gregorian">الهجري إلى الميلادي</string>
+    <string name="upcoming_events">المناسبات الإسلامية القادمة</string>
+
+    <!-- Settings -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="section_location">الموقع والإحداثيات</string>
+    <string name="section_calculation">طريقة حساب المواقيت</string>
+    <string name="section_notification">الإشعارات والاهتزاز</string>
+    <string name="section_appearance">المظهر واللغة</string>
+    <string name="section_widgets">الودجات والشاشة العائمة</string>
+
+    <string name="setting_ongoing_notif">إشعار شريط الحالة المستمر</string>
+    <string name="setting_ongoing_notif_desc">عرض عد تنازلي مستمر للصلاة القادمة في شريط الإشعارات</string>
+    <string name="setting_max_vibration">أقصى شدة اهتزاز</string>
+    <string name="setting_max_vibration_desc">نمط نبضات اهتزازية قوية ومستمرة عند دخول وقت الصلاة</string>
+    <string name="setting_pre_prayer">تنبيه قبل دخول الوقت</string>
+    <string name="setting_pre_prayer_desc">تنبيه قبل 10 دقائق من موعد الصلاة</string>
+    <string name="setting_iqomah_timer">العد التنازلي للإقامة</string>
+    <string name="setting_iqomah_timer_desc">عرض وقت الانتظار حتى الإقامة بعد الأذان</string>
+    <string name="setting_asr_rule">طريقة حساب صلاة العصر</string>
+    <string name="setting_ihtiyat">دقائق الاحتياط (+/-)</string>
+    <string name="setting_hijri_adjustment">تعديل التاريخ الهجري (+/- أيام)</string>
+
+    <!-- Themes -->
+    <string name="theme_emerald">الزمرد الأخضر (Shollu كلاسيك)</string>
+    <string name="theme_navy">الأزرق الملكي والذهبي</string>
+    <string name="theme_amoled">الأسود الحالك AMOLED</string>
+    <string name="theme_dynamic">ديناميكي Material You</string>
+</resources>
