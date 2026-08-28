@@ -13,8 +13,6 @@ class ReminderRepository(
 
     override val allReminders: Flow<List<Reminder>> = reminderDao.getAllReminders()
 
-    override fun getAllReminders(): Flow<List<Reminder>> = reminderDao.getAllReminders()
-
     override suspend fun getActiveReminders(): List<Reminder> {
         return reminderDao.getActiveReminders()
     }

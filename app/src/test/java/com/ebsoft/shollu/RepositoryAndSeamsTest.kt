@@ -179,8 +179,6 @@ class RepositoryAndSeamsTest {
             override val allReminders: Flow<List<Reminder>>
                 get() = flowOf(memoryStore.toList())
 
-            override fun getAllReminders(): Flow<List<Reminder>> = flowOf(memoryStore.toList())
-
             override suspend fun getActiveReminders(): List<Reminder> {
                 return memoryStore.filter { it.isEnabled }
             }

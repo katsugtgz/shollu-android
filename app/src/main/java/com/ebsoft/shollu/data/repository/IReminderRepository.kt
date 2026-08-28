@@ -13,11 +13,6 @@ interface IReminderRepository {
     val allReminders: Flow<List<Reminder>>
 
     /**
-     * Returns an observable Flow of all registered reminders.
-     */
-    fun getAllReminders(): Flow<List<Reminder>>
-
-    /**
      * Suspended query returning only currently enabled (active) reminders.
      */
     suspend fun getActiveReminders(): List<Reminder>
