@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.*
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.data.repository.CityRepository
@@ -32,6 +33,7 @@ import com.ebsoft.shollu.service.OngoingNotificationService
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
@@ -49,16 +51,21 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
+    // Settings writes (DataStore + alarm rescheduling) must survive navigating away from this
+    // screen, so they run on the application scope instead of rememberCoroutineScope (which is
+    // cancelled by navigation between the write and the AlarmScheduler reschedule).
+    val settingsScope = (context.applicationContext as? SholluApplication)?.applicationScope
+        ?: rememberCoroutineScope()
 
     val isOngoingEnabled by preferences.isOngoingNotificationEnabled.collectAsState(initial = true)
     val isMaxVibrationEnabled by preferences.isMaxVibrationEnabled.collectAsState(initial = true)
     val isPrePrayerEnabled by preferences.isPrePrayerAlertEnabled.collectAsState(initial = true)
     val prePrayerMinutes by preferences.prePrayerMinutes.collectAsState(initial = 10)
+    // Truthful dropzone running state, maintained by the service itself.
+    val isFloatingDropzoneRunning by FloatingDropzoneService.isRunning.collectAsState()
 
     var showMethodDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
-    var isFloatingDropzoneRunning by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -120,7 +127,7 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = {
-                                    coroutineScope.launch {
+                                    settingsScope.launch(Dispatchers.IO) {
                                         val next = (ihtiyatMinutes - 1).coerceAtLeast(0)
                                         preferences.updateIhtiyatMinutes(next)
                                         AlarmScheduler.scheduleNextPrayerAlarms(context)
@@ -132,7 +139,7 @@ fun SettingsScreen(
                             Text(text = "+$ihtiyatMinutes m", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             IconButton(
                                 onClick = {
-                                    coroutineScope.launch {
+                                    settingsScope.launch(Dispatchers.IO) {
                                         val next = (ihtiyatMinutes + 1).coerceAtMost(10)
                                         preferences.updateIhtiyatMinutes(next)
                                         AlarmScheduler.scheduleNextPrayerAlarms(context)
@@ -158,7 +165,7 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = {
-                                    coroutineScope.launch {
+                                    settingsScope.launch(Dispatchers.IO) {
                                         val next = (hijriAdjustment - 1).coerceAtLeast(-2)
                                         preferences.updateHijriAdjustment(next)
                                     }
@@ -169,7 +176,7 @@ fun SettingsScreen(
                             Text(text = "$hijriAdjustment hr", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             IconButton(
                                 onClick = {
-                                    coroutineScope.launch {
+                                    settingsScope.launch(Dispatchers.IO) {
                                         val next = (hijriAdjustment + 1).coerceAtMost(2)
                                         preferences.updateHijriAdjustment(next)
                                     }
@@ -223,20 +230,20 @@ fun SettingsScreen(
                         Switch(
                             checked = isOngoingEnabled,
                             onCheckedChange = { checked ->
-                                coroutineScope.launch {
+                                settingsScope.launch(Dispatchers.IO) {
                                     preferences.setOngoingNotificationEnabled(checked)
-                                    val intent = Intent(context, OngoingNotificationService::class.java).apply {
-                                        action = if (checked) OngoingNotificationService.ACTION_START_ONGOING else OngoingNotificationService.ACTION_STOP_ONGOING
-                                    }
-                                    if (checked) {
-                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                            context.startForegroundService(intent)
-                                        } else {
-                                            context.startService(intent)
-                                        }
+                                }
+                                val intent = Intent(context, OngoingNotificationService::class.java).apply {
+                                    action = if (checked) OngoingNotificationService.ACTION_START_ONGOING else OngoingNotificationService.ACTION_STOP_ONGOING
+                                }
+                                if (checked) {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        context.startForegroundService(intent)
                                     } else {
                                         context.startService(intent)
                                     }
+                                } else {
+                                    context.startService(intent)
                                 }
                             },
                             colors = SwitchDefaults.colors(checkedThumbColor = EmeraldGold, checkedTrackColor = EmeraldPrimary)
@@ -276,7 +283,7 @@ fun SettingsScreen(
                         Switch(
                             checked = isMaxVibrationEnabled,
                             onCheckedChange = { checked ->
-                                coroutineScope.launch {
+                                settingsScope.launch(Dispatchers.IO) {
                                     preferences.setMaxVibrationEnabled(checked)
                                 }
                             },
@@ -322,7 +329,7 @@ fun SettingsScreen(
                         Switch(
                             checked = isPrePrayerEnabled,
                             onCheckedChange = { checked ->
-                                coroutineScope.launch {
+                                settingsScope.launch(Dispatchers.IO) {
                                     preferences.setPrePrayerAlert(checked, prePrayerMinutes)
                                     AlarmScheduler.scheduleNextPrayerAlarms(context)
                                 }
@@ -390,7 +397,6 @@ fun SettingsScreen(
                                     )
                                     context.startActivity(intent)
                                 } else {
-                                    isFloatingDropzoneRunning = start
                                     val dropzoneIntent = Intent(context, FloatingDropzoneService::class.java)
                                     if (start) {
                                         context.startService(dropzoneIntent)
@@ -420,11 +426,11 @@ fun SettingsScreen(
                     CalculationMethod.values().forEach { method ->
                         Surface(
                             onClick = {
-                                coroutineScope.launch {
+                                settingsScope.launch(Dispatchers.IO) {
                                     preferences.updateCalculationMethod(method)
                                     AlarmScheduler.scheduleNextPrayerAlarms(context)
-                                    showMethodDialog = false
                                 }
+                                showMethodDialog = false
                             },
                             shape = RoundedCornerShape(10.dp),
                             color = if (method == calculationMethod) EmeraldPrimary.copy(alpha = 0.15f) else Color.Transparent,
@@ -458,10 +464,10 @@ fun SettingsScreen(
                     ThemeMode.values().forEach { mode ->
                         Surface(
                             onClick = {
-                                coroutineScope.launch {
+                                settingsScope.launch(Dispatchers.IO) {
                                     preferences.setThemeMode(mode)
-                                    showThemeDialog = false
                                 }
+                                showThemeDialog = false
                             },
                             shape = RoundedCornerShape(10.dp),
                             color = if (mode == themeMode) EmeraldPrimary.copy(alpha = 0.15f) else Color.Transparent,

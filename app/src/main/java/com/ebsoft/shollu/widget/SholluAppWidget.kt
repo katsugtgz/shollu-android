@@ -12,6 +12,7 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
+import androidx.glance.appwidget.updateAll
 import androidx.glance.layout.*
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -160,4 +161,20 @@ class SholluAppWidget : GlanceAppWidget() {
 
 class SholluAppWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = SholluAppWidget()
+}
+
+/**
+ * Proactively re-renders every SholluAppWidget instance with fresh preferences/times.
+ *
+ * Call sites that must invoke this (owned by other modules):
+ *  - MainActivity after a city change / GPS auto-detect (preferences.updateCity)
+ *  - BootCompletedReceiver after rescheduling alarms on boot
+ *  - AlarmScheduler after a prayer alarm fires (so the countdown target advances)
+ */
+suspend fun updateSholluWidgets(context: Context) {
+    try {
+        SholluAppWidget().updateAll(context)
+    } catch (t: Throwable) {
+        t.printStackTrace()
+    }
 }

@@ -26,6 +26,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.City
+import com.ebsoft.shollu.engine.AstroCalculator
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.ui.navigation.Screen
 import com.ebsoft.shollu.ui.screens.calendar.CalendarScreen
@@ -45,6 +46,7 @@ import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -86,7 +88,6 @@ class MainActivity : ComponentActivity() {
             val todayPrayerTimes by prayerRepo.todayPrayerTimes.collectAsState(initial = null)
 
             val navController = rememberNavController()
-            val coroutineScope = rememberCoroutineScope()
             var showLocationPicker by remember { mutableStateOf(false) }
 
             val items = listOf(
@@ -190,10 +191,19 @@ class MainActivity : ComponentActivity() {
                         LocationPickerDialog(
                             cityRepository = cityRepo,
                             onCitySelected = { city ->
-                                coroutineScope.launch {
+                                // App-owned IO scope (mirrors processLocation): dialog
+                                // dismissal is not blocked and navigating away cannot
+                                // cancel the pipeline mid-way.
+                                val app = application as SholluApplication
+                                app.applicationScope.launch(Dispatchers.IO) {
+                                    // Fixed-list city: isGps defaults false, clearing any GPS
+                                    // flag from a previous detection (its timezone is canonical).
                                     preferences.updateCity(city)
                                     AlarmScheduler.scheduleNextPrayerAlarms(this@MainActivity)
-                                    showLocationPicker = false
+                                    com.ebsoft.shollu.widget.updateSholluWidgets(this@MainActivity)
+                                    withContext(Dispatchers.Main) {
+                                        showLocationPicker = false
+                                    }
                                 }
                             },
                             onAutoGpsClick = {
@@ -335,8 +345,12 @@ class MainActivity : ComponentActivity() {
             val finalCityName = locality ?: "GPS (${String.format(Locale.US, "%.4f, %.4f", location.latitude, location.longitude)})"
             val finalCountry = if (countryName.isNotBlank()) countryName else "Koordinat GPS"
 
-            // Calculate timezone dynamically from system timezone rawOffset
-            val tz = TimeZone.getDefault().rawOffset / 3600000.0
+            // Calculate timezone from the zone's CURRENT offset (DST-aware),
+            // not the fixed rawOffset which is wrong half the year in DST zones.
+            val tz = AstroCalculator.currentOffsetHours(
+                TimeZone.getDefault().id,
+                System.currentTimeMillis()
+            )
 
             val gpsCity = City(
                 name = finalCityName,
@@ -348,8 +362,11 @@ class MainActivity : ComponentActivity() {
                 timezone = tz
             )
 
-            app.preferences.updateCity(gpsCity)
+            // isGps = true: the stored timezone is a DST snapshot of the device offset and
+            // must be re-derived on ACTION_TIMEZONE_CHANGED (see BootCompletedReceiver).
+            app.preferences.updateCity(gpsCity, isGps = true)
             AlarmScheduler.scheduleNextPrayerAlarms(this@MainActivity)
+            com.ebsoft.shollu.widget.updateSholluWidgets(this@MainActivity)
 
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@MainActivity, "Lokasi terdeteksi: $finalCityName", Toast.LENGTH_SHORT).show()

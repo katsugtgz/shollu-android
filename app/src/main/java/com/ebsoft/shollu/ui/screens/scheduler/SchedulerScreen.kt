@@ -241,8 +241,8 @@ private fun AddReminderDialog(
 ) {
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
-    var hour by remember { mutableIntStateOf(6) }
-    var minute by remember { mutableIntStateOf(0) }
+    val hourField = remember { TimeFieldState(maxValue = 23, initialText = "06") }
+    val minuteField = remember { TimeFieldState(maxValue = 59, initialText = "00") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -270,21 +270,15 @@ private fun AddReminderDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
-                        value = String.format("%02d", hour),
-                        onValueChange = {
-                            val v = it.toIntOrNull() ?: 0
-                            hour = v.coerceIn(0, 23)
-                        },
+                        value = hourField.text,
+                        onValueChange = { hourField.onValueChange(it) },
                         label = { Text("Jam (0-23)") },
                         modifier = Modifier.weight(1f)
                     )
                     Text(":", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     OutlinedTextField(
-                        value = String.format("%02d", minute),
-                        onValueChange = {
-                            val v = it.toIntOrNull() ?: 0
-                            minute = v.coerceIn(0, 59)
-                        },
+                        value = minuteField.text,
+                        onValueChange = { minuteField.onValueChange(it) },
                         label = { Text("Menit (0-59)") },
                         modifier = Modifier.weight(1f)
                     )
@@ -295,7 +289,7 @@ private fun AddReminderDialog(
             Button(
                 onClick = {
                     if (title.isNotBlank()) {
-                        onSave(title, desc, hour, minute, "*")
+                        onSave(title, desc, hourField.value, minuteField.value, "*")
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)

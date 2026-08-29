@@ -26,8 +26,11 @@ import com.ebsoft.shollu.ui.components.NextPrayerHeroCard
 import com.ebsoft.shollu.ui.components.PrayerCard
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
+import com.ebsoft.shollu.ui.util.rememberAppLocale
+import com.ebsoft.shollu.ui.util.rememberTickMillis
 import java.time.LocalDate
 import java.time.LocalTime
+import java.util.Locale
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -41,13 +44,17 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val now = remember { LocalTime.now() }
-    val today = remember { LocalDate.now() }
+    // Per-30s wall-clock tick: re-evaluates the next prayer after it passes and refreshes the
+    // date at midnight, instead of freezing the values read at first composition.
+    val tick = rememberTickMillis(intervalMillis = 30_000L)
+    val now = remember(tick) { LocalTime.now() }
+    val today = remember(tick, prayerTimes) { LocalDate.now() }
+    val appLocale = rememberAppLocale()
     val hijriDate = remember(today, hijriAdjustment) {
         HijriCalendarHelper.gregorianToHijri(today, hijriAdjustment)
     }
 
-    val (nextPrayerType, nextPrayerTime) = prayerTimes?.getNextPrayer(LocalTime.now()) ?: (PrayerType.SUBUH to LocalTime.of(4, 30))
+    val (nextPrayerType, nextPrayerTime) = prayerTimes?.getNextPrayer(now) ?: (PrayerType.SUBUH to LocalTime.of(4, 30))
 
     LazyColumn(
         modifier = modifier
@@ -89,7 +96,7 @@ fun HomeScreen(
                     icon = Icons.Default.Share,
                     title = "Bagikan",
                     onClick = {
-                        shareTodaySchedule(context, selectedCity, prayerTimes, hijriDate.formatDisplay())
+                        shareTodaySchedule(context, selectedCity, prayerTimes, hijriDate.formatDisplay(), today, appLocale)
                     },
                     modifier = Modifier.weight(1f)
                 )
@@ -110,7 +117,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy")),
+                    text = today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", appLocale)),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -211,13 +218,15 @@ private fun shareTodaySchedule(
     context: Context,
     city: City,
     times: PrayerTimes?,
-    hijriDate: String
+    hijriDate: String,
+    today: LocalDate = LocalDate.now(),
+    locale: Locale = Locale.getDefault()
 ) {
     if (times == null) return
     val text = buildString {
         appendLine("🕌 JADWAL SHOLAT HARI INI")
         appendLine("📍 Lokasi: ${city.name}")
-        appendLine("📅 Masehi: ${LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM yyyy"))}")
+        appendLine("📅 Masehi: ${today.format(DateTimeFormatter.ofPattern("d MMMM yyyy", locale))}")
         appendLine("🌙 Hijriyah: $hijriDate")
         appendLine("------------------------------")
         appendLine("• Imsak   : ${times.getFormattedTimeFor(PrayerType.IMSAK)} WIB")

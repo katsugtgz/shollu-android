@@ -1,13 +1,13 @@
 package com.ebsoft.shollu.ui.screens.qibla
 
+import android.app.Activity
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
+import android.view.Surface
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,21 @@ import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import kotlin.math.abs
 
+/** Current display rotation (Surface.ROTATION_*), refreshed on configuration change. */
+@Composable
+private fun rememberDisplayRotation(context: Context): Int {
+    val configuration = LocalConfiguration.current
+    return remember(configuration) {
+        @Suppress("DEPRECATION")
+        (context as? Activity)?.windowManager?.defaultDisplay?.rotation
+            ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                context.display?.rotation
+            } else {
+                null
+            } ?: Surface.ROTATION_0
+    }
+}
+
 @Composable
 fun QiblaCompassScreen(
     selectedCity: City,
@@ -45,6 +61,8 @@ fun QiblaCompassScreen(
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_HIGH) }
+    var sensorAvailable by remember { mutableStateOf(true) }
+    val displayRotation = rememberDisplayRotation(context)
 
     val qiblaBearing = remember(selectedCity) {
         QiblaCalculator.calculateBearing(selectedCity.latitude, selectedCity.longitude).toFloat()
@@ -53,8 +71,15 @@ fun QiblaCompassScreen(
         QiblaCalculator.calculateDistanceKm(selectedCity.latitude, selectedCity.longitude)
     }
 
-    // Compass Sensor Listener
-    DisposableEffect(Unit) {
+    // Magnetic declination for the selected city so the magnetic compass azimuth can be
+    // compared against the true-north Qibla bearing.
+    val nowMillis = remember { System.currentTimeMillis() }
+    val declination = remember(selectedCity, nowMillis) {
+        QiblaCalculator.magneticDeclinationDegrees(selectedCity.latitude, selectedCity.longitude, nowMillis).toFloat()
+    }
+
+    // Compass Sensor Listener (re-registered when the display rotation changes)
+    DisposableEffect(displayRotation) {
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         val accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -66,6 +91,7 @@ fun QiblaCompassScreen(
 
         val listener = object : SensorEventListener {
             private val rotationMatrix = FloatArray(9)
+            private val remappedMatrix = FloatArray(9)
             private val orientationValues = FloatArray(3)
             private val gravityValues = FloatArray(3)
             private val geomagneticValues = FloatArray(3)
@@ -108,7 +134,11 @@ fun QiblaCompassScreen(
             }
 
             private fun updateAzimuthFromRotationMatrix() {
-                SensorManager.getOrientation(rotationMatrix, orientationValues)
+                // Compensate for the current display rotation so the azimuth follows the
+                // direction the user faces (fixes the 90-degree offset in landscape).
+                val (axisX, axisY) = QiblaCalculator.remapAxesForDisplayRotation(displayRotation)
+                SensorManager.remapCoordinateSystem(rotationMatrix, axisX, axisY, remappedMatrix)
+                SensorManager.getOrientation(remappedMatrix, orientationValues)
                 var degree = Math.toDegrees(orientationValues[0].toDouble()).toFloat()
                 degree = (degree + 360f) % 360f
                 // Shortest angular distance low-pass smoothing avoiding 360° jump
@@ -121,27 +151,32 @@ fun QiblaCompassScreen(
             }
         }
 
+        var registered = false
         if (hasRotationVector) {
-            sensorManager.registerListener(listener, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI)
+            registered = sensorManager.registerListener(listener, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI)
         } else if (hasAccelMag) {
-            sensorManager.registerListener(listener, accelerometerSensor, SensorManager.SENSOR_DELAY_UI)
-            sensorManager.registerListener(listener, magneticSensor, SensorManager.SENSOR_DELAY_UI)
+            val accelRegistered = sensorManager.registerListener(listener, accelerometerSensor, SensorManager.SENSOR_DELAY_UI)
+            val magneticRegistered = sensorManager.registerListener(listener, magneticSensor, SensorManager.SENSOR_DELAY_UI)
+            registered = accelRegistered || magneticRegistered
         } else {
             @Suppress("DEPRECATION")
             val orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
             if (orientationSensor != null) {
-                sensorManager.registerListener(listener, orientationSensor, SensorManager.SENSOR_DELAY_UI)
+                registered = sensorManager.registerListener(listener, orientationSensor, SensorManager.SENSOR_DELAY_UI)
             }
         }
+        sensorAvailable = registered
 
         onDispose {
             sensorManager.unregisterListener(listener)
         }
     }
 
-    // Relative angle between current heading and Qibla bearing
-    val diff = (azimuth - qiblaBearing + 360f) % 360f
-    val isAligned = diff < 3f || diff > 357f
+    // Compare the true-north azimuth (magnetic azimuth + declination) with the true-north
+    // Qibla bearing; confirmation is suppressed while no sensor is feeding azimuth updates.
+    val trueAzimuth = QiblaCalculator.qiblaTrueBearingFromMagnetic(azimuth.toDouble(), declination.toDouble()).toFloat()
+    val diff = (trueAzimuth - qiblaBearing + 360f) % 360f
+    val isAligned = sensorAvailable && (diff < 3f || diff > 357f)
 
     val animatedAzimuth by animateFloatAsState(
         targetValue = -azimuth,
@@ -204,7 +239,7 @@ fun QiblaCompassScreen(
             }
 
             // Qibla Target Needle pointing to Kaaba
-            val qiblaNeedleAngle = (qiblaBearing - azimuth)
+            val qiblaNeedleAngle = (qiblaBearing - trueAzimuth)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -254,7 +289,35 @@ fun QiblaCompassScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (isAligned) {
+            if (!sensorAvailable) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Kompas tidak tersedia pada perangkat ini. Arah kiblat: ${String.format("%.1f", qiblaBearing)}° dari utara sejati.",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            } else if (isAligned) {
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = EmeraldGold.copy(alpha = 0.2f)),
@@ -284,7 +347,7 @@ fun QiblaCompassScreen(
                 }
             } else {
                 Text(
-                    text = "Arah Ka'bah: ${String.format("%.1f", qiblaBearing)}° • Kompas: ${String.format("%.1f", azimuth)}°",
+                    text = "Arah Ka'bah: ${String.format("%.1f", qiblaBearing)}° • Kompas (utara sejati): ${String.format("%.1f", trueAzimuth)}°",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = MaterialTheme.colorScheme.onSurface

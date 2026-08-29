@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
@@ -51,6 +52,9 @@ class FullscreenAlarmActivity : ComponentActivity() {
                         finish()
                     },
                     onSnooze = {
+                        // Snooze: re-fire the prayer alarm (fullscreen + vibration) in 5 minutes,
+                        // then stop the current vibration and close.
+                        AlarmScheduler.snoozeAlarm(this@FullscreenAlarmActivity)
                         stopVibration()
                         finish()
                     }

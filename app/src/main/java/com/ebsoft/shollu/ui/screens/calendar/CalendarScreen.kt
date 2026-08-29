@@ -25,8 +25,11 @@ import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.engine.HijriCalendarHelper
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
+import com.ebsoft.shollu.ui.util.rememberAppLocale
+import com.ebsoft.shollu.ui.util.rememberTickMillis
 import java.time.LocalDate
 import java.time.YearMonth
+import java.util.Locale
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -41,6 +44,7 @@ fun CalendarScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val appLocale = rememberAppLocale()
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Jadwal Bulanan, 1: Konversi Kalender, 2: Hari Besar
     var currentYearMonth by remember { mutableStateOf(YearMonth.now()) }
 
@@ -88,11 +92,12 @@ fun CalendarScreen(
                 yearMonth = currentYearMonth,
                 schedule = monthlySchedule,
                 city = selectedCity,
+                locale = appLocale,
                 onPreviousMonth = { currentYearMonth = currentYearMonth.minusMonths(1) },
                 onNextMonth = { currentYearMonth = currentYearMonth.plusMonths(1) },
-                onExport = { exportSchedule(context, selectedCity, currentYearMonth, monthlySchedule) }
+                onExport = { exportSchedule(context, selectedCity, currentYearMonth, monthlySchedule, appLocale) }
             )
-            1 -> DateConverterView(hijriAdjustment = hijriAdjustment)
+            1 -> DateConverterView(hijriAdjustment = hijriAdjustment, locale = appLocale)
             2 -> IslamicEventsView(hijriAdjustment = hijriAdjustment)
         }
     }
@@ -103,11 +108,12 @@ private fun MonthlyScheduleView(
     yearMonth: YearMonth,
     schedule: List<PrayerTimes>,
     city: City,
+    locale: Locale,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onExport: () -> Unit
 ) {
-    val monthTitle = yearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy"))
+    val monthTitle = yearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale))
 
     Column(
         modifier = Modifier
@@ -206,8 +212,10 @@ private fun MonthlyScheduleView(
 }
 
 @Composable
-private fun DateConverterView(hijriAdjustment: Int) {
-    var gregDate by remember { mutableStateOf(LocalDate.now()) }
+private fun DateConverterView(hijriAdjustment: Int, locale: Locale) {
+    // Day tick keeps "Hari Ini" truthful across midnight.
+    val dayTick = rememberTickMillis(intervalMillis = 60_000L)
+    var gregDate by remember(dayTick) { mutableStateOf(LocalDate.now()) }
     var hijriResult by remember(gregDate, hijriAdjustment) {
         mutableStateOf(HijriCalendarHelper.gregorianToHijri(gregDate, hijriAdjustment))
     }
@@ -232,7 +240,7 @@ private fun DateConverterView(hijriAdjustment: Int) {
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Tanggal Masehi Hari Ini: ${gregDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy"))}",
+                    text = "Tanggal Masehi Hari Ini: ${gregDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy", locale))}",
                     fontSize = 14.sp
                 )
 
@@ -326,9 +334,10 @@ private fun exportSchedule(
     context: Context,
     city: City,
     yearMonth: YearMonth,
-    schedule: List<PrayerTimes>
+    schedule: List<PrayerTimes>,
+    locale: Locale = Locale.getDefault()
 ) {
-    val monthName = yearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy"))
+    val monthName = yearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale))
     val htmlContent = buildString {
         appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Jadwal Sholat ${city.name} - $monthName</title>")
         appendLine("<style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:8px;text-align:center;} th{background:#0D6A53;color:#fff;}</style></head><body>")
