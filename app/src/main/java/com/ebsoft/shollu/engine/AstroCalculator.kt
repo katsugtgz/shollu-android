@@ -5,6 +5,7 @@ import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.PrayerTimes
 import java.time.LocalDate
 import java.time.LocalTime
+import java.util.TimeZone
 import kotlin.math.*
 
 object AstroCalculator {
@@ -54,24 +55,32 @@ object AstroCalculator {
         val sunAltitudeRefraction = -0.8333 - (0.0347 * sqrt(max(0.0, elevation)))
 
         // Fajr
-        val fajrTime = noon - sunAngleTime(method.fajrAngle, safeLat, delta)
+        val (fajrArc, fajrReal) = sunAngleTime(method.fajrAngle, safeLat, delta)
+        val fajrTime = noon - fajrArc
 
         // Sunrise & Sunset
-        val sunriseTime = noon - sunAngleTime(-sunAltitudeRefraction, safeLat, delta)
-        val sunsetTime = noon + sunAngleTime(-sunAltitudeRefraction, safeLat, delta)
+        val (refractionArc, _) = sunAngleTime(-sunAltitudeRefraction, safeLat, delta)
+        val sunriseTime = noon - refractionArc
+        val sunsetTime = noon + refractionArc
 
         // Asr Calculation (pass negative asrAngle so sunAngleTime computes positive altitude above horizon)
         val asrAngle = -dAtan(1.0 / (asrJuristic.factor + dTan(abs(safeLat - delta))))
-        val asrTime = noon + sunAngleTime(asrAngle, safeLat, delta)
+        val (asrArc, _) = sunAngleTime(asrAngle, safeLat, delta)
+        val asrTime = noon + asrArc
 
         // Maghrib
         val maghribTime = sunsetTime
 
         // Isha
-        val ishaTime = if (method.ishaIntervalMin > 0) {
-            maghribTime + (method.ishaIntervalMin / 60.0)
+        val ishaTime: Double
+        val ishaReal: Boolean
+        if (method.ishaIntervalMin > 0) {
+            ishaTime = maghribTime + (method.ishaIntervalMin / 60.0)
+            ishaReal = true
         } else {
-            noon + sunAngleTime(method.ishaAngle, safeLat, delta)
+            val (ishaArc, real) = sunAngleTime(method.ishaAngle, safeLat, delta)
+            ishaTime = noon + ishaArc
+            ishaReal = real
         }
 
         // Convert hours to LocalTime with safety Ihtiyat minutes and custom adjustments
@@ -81,16 +90,18 @@ object AstroCalculator {
         val maghribOffset = ihtiyatMinutes + (customOffsets["MAGHRIB"] ?: 0)
         val ishaOffset = ihtiyatMinutes + (customOffsets["ISYA"] ?: 0)
 
-        val subuh = decimalHoursToTime(fajrTime, fajrOffset)
-        val terbit = decimalHoursToTime(sunriseTime, 0)
+        // Non-real solutions (polar day/night, NaN-degraded math) keep a clamped
+        // placeholder time for display but are flagged invalid for scheduling.
+        val subuh = decimalHoursToTime(fajrTime, fajrOffset) ?: LocalTime.MIDNIGHT
+        val terbit = decimalHoursToTime(sunriseTime, 0) ?: LocalTime.MIDNIGHT
         // Imsak is standard 10 minutes before Subuh
-        val imsak = decimalHoursToTime(fajrTime, fajrOffset - 10)
+        val imsak = decimalHoursToTime(fajrTime, fajrOffset - 10) ?: LocalTime.MIDNIGHT
         // Dhuha is typically ~20 minutes after Sunrise
-        val dhuha = decimalHoursToTime(sunriseTime, 20)
-        val dzuhur = decimalHoursToTime(noon, dzuhurOffset)
-        val ashar = decimalHoursToTime(asrTime, asharOffset)
-        val maghrib = decimalHoursToTime(maghribTime, maghribOffset)
-        val isha = decimalHoursToTime(ishaTime, ishaOffset)
+        val dhuha = decimalHoursToTime(sunriseTime, 20) ?: LocalTime.MIDNIGHT
+        val dzuhur = decimalHoursToTime(noon, dzuhurOffset) ?: LocalTime.MIDNIGHT
+        val ashar = decimalHoursToTime(asrTime, asharOffset) ?: LocalTime.MIDNIGHT
+        val maghrib = decimalHoursToTime(maghribTime, maghribOffset) ?: LocalTime.MIDNIGHT
+        val isha = decimalHoursToTime(ishaTime, ishaOffset) ?: LocalTime.MIDNIGHT
 
         return PrayerTimes(
             date = date,
@@ -101,22 +112,38 @@ object AstroCalculator {
             dzuhur = dzuhur,
             ashar = ashar,
             maghrib = maghrib,
-            isya = isha
+            isya = isha,
+            isSubuhValid = fajrReal && isRealHours(fajrTime),
+            isIsyaValid = ishaReal && isRealHours(ishaTime)
         )
     }
 
-    private fun sunAngleTime(angle: Double, latitude: Double, delta: Double): Double {
+    private fun sunAngleTime(angle: Double, latitude: Double, delta: Double): Pair<Double, Boolean> {
         val cosLat = dCos(latitude)
         val cosDelta = dCos(delta)
         val denom = cosLat * cosDelta
-        if (abs(denom) < 1e-9) return 0.0
+        if (denom.isNaN() || abs(denom) < 1e-9) return 0.0 to false
         val cosH = (-dSin(angle) - dSin(latitude) * dSin(delta)) / denom
-        val clampedCosH = cosH.coerceIn(-1.0, 1.0)
-        return dAcos(clampedCosH) / 15.0
+        val hasRealSolution = cosH >= -1.0 && cosH <= 1.0
+        return dAcos(cosH.coerceIn(-1.0, 1.0)) / 15.0 to hasRealSolution
     }
 
-    private fun decimalHoursToTime(decimalHours: Double, offsetMinutes: Int): LocalTime {
-        if (decimalHours.isNaN() || decimalHours.isInfinite()) return LocalTime.of(0, 0)
+    private fun isRealHours(value: Double): Boolean = !value.isNaN() && !value.isInfinite()
+
+    /**
+     * The zone's offset in effect AT [atMillis] (DST-aware), in hours.
+     * Unlike TimeZone.rawOffset this tracks summer time:
+     * e.g. Europe/London is +1.0 in July but 0.0 in January.
+     */
+    fun currentOffsetHours(zoneId: String, atMillis: Long): Double =
+        TimeZone.getTimeZone(zoneId).getOffset(atMillis) / 3_600_000.0
+
+    /**
+     * Returns null for non-real times (NaN/Infinite) so callers can flag the
+     * prayer invalid instead of silently substituting 00:00.
+     */
+    private fun decimalHoursToTime(decimalHours: Double, offsetMinutes: Int): LocalTime? {
+        if (decimalHours.isNaN() || decimalHours.isInfinite()) return null
         var totalMinutes = (decimalHours * 60.0).roundToInt() + offsetMinutes
         // Normalize within 24h
         totalMinutes = (totalMinutes % (24 * 60) + (24 * 60)) % (24 * 60)

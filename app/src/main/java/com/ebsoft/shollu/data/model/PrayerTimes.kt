@@ -14,7 +14,15 @@ data class PrayerTimes(
     val dzuhur: LocalTime,
     val ashar: LocalTime,
     val maghrib: LocalTime,
-    val isya: LocalTime
+    val isya: LocalTime,
+    /**
+     * False when the sun never reaches the Subuh angle on this date/location
+     * (high-latitude summer). The displayed [subuh] time is only a clamped
+     * placeholder and must not be used for scheduling.
+     */
+    val isSubuhValid: Boolean = true,
+    /** See [isSubuhValid]; false when the sun never reaches the Isya angle. */
+    val isIsyaValid: Boolean = true
 ) {
     fun getTimeFor(prayerType: PrayerType): LocalTime {
         return when (prayerType) {
@@ -60,7 +68,10 @@ data class PrayerTimes(
      * Determines the next obligatory prayer with complete LocalDateTime target,
      * ensuring proper date rollover across midnight and after Isya.
      */
-    fun getNextPrayerTarget(now: LocalDateTime = LocalDateTime.now()): Triple<PrayerType, LocalTime, LocalDateTime> {
+    fun getNextPrayerTarget(
+        now: LocalDateTime = LocalDateTime.now(),
+        tomorrow: PrayerTimes? = null
+    ): Triple<PrayerType, LocalTime, LocalDateTime> {
         val currentTime = now.toLocalTime()
         val schedule = listOf(
             PrayerType.SUBUH to subuh,
@@ -75,8 +86,10 @@ data class PrayerTimes(
                 return Triple(type, time, LocalDateTime.of(now.toLocalDate(), time))
             }
         }
-        // Past Isya: target is tomorrow's Subuh
-        val tomorrow = now.toLocalDate().plusDays(1)
-        return Triple(PrayerType.SUBUH, subuh, LocalDateTime.of(tomorrow, subuh))
+        // Past Isya: target is tomorrow's Subuh. Prefer the real tomorrow
+        // instance when supplied (equinox drift: dawn shifts day to day).
+        val tomorrowSubuh = tomorrow?.subuh ?: subuh
+        val tomorrowDate = now.toLocalDate().plusDays(1)
+        return Triple(PrayerType.SUBUH, tomorrowSubuh, LocalDateTime.of(tomorrowDate, tomorrowSubuh))
     }
 }

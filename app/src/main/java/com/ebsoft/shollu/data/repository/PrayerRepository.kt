@@ -4,15 +4,11 @@ import com.ebsoft.shollu.data.model.*
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.engine.AstroCalculator
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
-import java.time.Duration
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.YearMonth
 import java.util.concurrent.ConcurrentHashMap
 
@@ -21,7 +17,8 @@ import java.util.concurrent.ConcurrentHashMap
  * and automatic midnight-rollover Flow emissions.
  */
 class PrayerRepository(
-    private val preferences: SholluPreferences
+    private val preferences: SholluPreferences,
+    private val clock: AppClock = DefaultAppClock
 ) : IPrayerRepository {
 
     private data class PrayerCalculationKey(
@@ -39,18 +36,12 @@ class PrayerRepository(
     private val calculationCache = ConcurrentHashMap<PrayerCalculationKey, PrayerTimes>()
 
     /**
-     * Flow pulse emitting the current date and ticking precisely at the next midnight.
+     * Flow pulse emitting the current date: ticks just past each natural
+     * midnight AND re-emits within 30s when the wall clock jumps (system
+     * time / timezone change), instead of parking in one monotonic delay().
      */
-    private fun midnightPulseFlow(): Flow<LocalDate> = flow {
-        while (true) {
-            val today = LocalDate.now()
-            emit(today)
-            val now = LocalDateTime.now()
-            val nextMidnight = now.toLocalDate().plusDays(1).atStartOfDay()
-            val millisUntilTomorrow = Duration.between(now, nextMidnight).toMillis() + 50L
-            delay(millisUntilTomorrow.coerceIn(500L, 86_400_000L))
-        }
-    }
+    private fun midnightPulseFlow(): Flow<LocalDate> =
+        datePulseFlow(clock, pollIntervalMillis = 30_000L)
 
     override val todayPrayerTimes: Flow<PrayerTimes> = combine(
         midnightPulseFlow(),
