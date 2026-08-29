@@ -104,7 +104,7 @@ fun SettingsScreen(
                         onClick = onOpenLocationPicker
                     )
 
-                    Divider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                     SettingsRowClickable(
                         icon = Icons.Default.Calculate,
@@ -113,7 +113,7 @@ fun SettingsScreen(
                         onClick = { showMethodDialog = true }
                     )
 
-                    Divider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -151,7 +151,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Divider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -250,7 +250,7 @@ fun SettingsScreen(
                         )
                     }
 
-                    Divider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                     // Maximum Vibration Intensity Switch
                     Row(
@@ -314,7 +314,7 @@ fun SettingsScreen(
                         Text("Tes Getar Maksimal (30 Detik)")
                     }
 
-                    Divider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                     // Pre-Prayer Warning
                     Row(
@@ -357,7 +357,7 @@ fun SettingsScreen(
                         onClick = { showThemeDialog = true }
                     )
 
-                    Divider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                     // Floating Dropzone
                     Row(
