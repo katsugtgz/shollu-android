@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -15,13 +17,17 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "3.10.0"
-        
-        // Version from git tag if available
-        if (project.hasProperty("RELEASE_VERSION_NAME")) {
-            versionName = project.property("RELEASE_VERSION_NAME").toString()
+
+        // Version from CI (RELEASE_* env vars on tag push) or -P gradle properties if available
+        val versionNameOverride = System.getenv("RELEASE_VERSION_NAME")?.takeIf { it.isNotBlank() }
+            ?: project.findProperty("RELEASE_VERSION_NAME")?.toString()
+        if (versionNameOverride != null) {
+            versionName = versionNameOverride
         }
-        if (project.hasProperty("RELEASE_VERSION_CODE")) {
-            versionCode = project.property("RELEASE_VERSION_CODE").toInteger()
+        val versionCodeOverride = System.getenv("RELEASE_VERSION_CODE")?.takeIf { it.isNotBlank() }
+            ?: project.findProperty("RELEASE_VERSION_CODE")?.toString()
+        versionCodeOverride?.toIntOrNull()?.let { override ->
+            if (override > 0) versionCode = override
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -33,20 +39,25 @@ android {
     // Define signing configs BEFORE buildTypes (required for proper evaluation order)
     signingConfigs {
         create("release") {
-            // Default keystore path
-            storeFile = rootProject.file("app/release.keystore")
-            keyAlias = "shollu-release"
-            
-            // Try environment variables first (CI), then fall back to system defaults
-            val envStoreFile = System.getenv("RELEASE_STORE_FILE")
-            val envKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
-            val envKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
-            val envStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
-            
-            if (envStoreFile != null) storeFile = rootProject.file(envStoreFile)
-            if (envKeyAlias != null) keyAlias = envKeyAlias
-            if (envKeyPassword != null) keyPassword = envKeyPassword
-            if (envStorePassword != null) storePassword = envStorePassword
+            // Credential resolution order: RELEASE_* environment variables (CI) first,
+            // then app/signing.properties (local dev), then defaults below.
+            val signingProps = Properties()
+            val signingPropsFile = rootProject.file("app/signing.properties")
+            if (signingPropsFile.exists()) {
+                // Note: raw file reads here are not configuration-cache inputs; the project
+                // does not enable the configuration cache. If enabling it later, re-work this
+                // to providers.fileContents(...) so credential edits invalidate the cache.
+                signingPropsFile.inputStream().use { signingProps.load(it) }
+            }
+
+            fun signingValue(envName: String, propsKey: String = envName): String? =
+                System.getenv(envName)?.takeIf { it.isNotBlank() }
+                    ?: signingProps.getProperty(propsKey)?.takeIf { it.isNotBlank() }
+
+            storeFile = rootProject.file(signingValue("RELEASE_STORE_FILE") ?: "app/release.keystore")
+            keyAlias = signingValue("RELEASE_KEY_ALIAS") ?: "shollu-release"
+            signingValue("RELEASE_KEY_PASSWORD")?.let { keyPassword = it }
+            signingValue("RELEASE_STORE_PASSWORD")?.let { storePassword = it }
         }
     }
 

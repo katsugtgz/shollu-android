@@ -1,9 +1,10 @@
 # 🎯 Quick Start Guide - Shollu Android CI/CD
 
 ## ✅ ALREADY DONE:
-- ✅ Created `.github/workflows/android-build.yml` (CI workflow)
+- ✅ Created `.github/workflows/android-build.yml` (the single CI/CD workflow — tests, debug APK, signed releases)
 - ✅ Updated `app/build.gradle.kts` with release signing
 - ✅ Created config example file
+- ✅ Added keystore + `app/signing.properties` to `.gitignore`
 
 ---
 
@@ -107,18 +108,17 @@ After ~3 minutes → Debug APK ready in Artifacts!
 
 ### Step 6: Create Your FIRST Release 📦
 
-Update version in `app/build.gradle.kts`:
-```kotlin
-versionCode = 2
-versionName = "3.11.0"  // <-- Update this!
+No manual version edit needed — CI derives the version from the tag:
+- `versionName` = tag without the `v`
+- `versionCode` = `MAJOR*10000 + MINOR*100 + PATCH` (e.g. v3.11.0 → 31100)
+
+Just tag and push:
+```bash
+git tag v3.11.0
+git push origin v3.11.0
 ```
 
-Create tag:
-```bash
-git commit -am "Release version 3.11.0"
-git tag v3.11.0
-git push && git push origin v3.11.0
-```
+Tags with a suffix (e.g. `v3.11.0-rc1`) publish as pre-releases.
 
 **Boom!** 🚀 After ~5-8 minutes you'll have:
 - ✅ Signed APK (`app-release.apk`)
@@ -131,9 +131,9 @@ git push && git push origin v3.11.0
 
 | Action | Result |
 |--------|--------|
-| **Push to `main`** | Debug APK + run tests |
-| **Push tag `v*`** | Signed Release APK + AAB + GitHub Release |
-| **Pull Request** | Run tests (no APKs) |
+| **Push to `main`/`develop`** | Debug APK + run tests |
+| **Push tag `v*.*.*`** | Signed Release APK + AAB + GitHub Release |
+| **Pull Request** | Run tests + debug APK artifact |
 
 ---
 
@@ -150,17 +150,20 @@ git push && git push origin v3.11.0
 - `SIGNING_STORE_PASSWORD`
 - `SIGNING_KEY_PASSWORD`
 
-**Version not updating?** Make sure `versionCode` increments each release
+**Version not updating?** Release version comes from the tag, not `build.gradle.kts`: `versionName` = tag minus `v`, `versionCode` = `MAJOR*10000+MINOR*100+PATCH`. Push a new tag (e.g. `v3.11.0`)
 
-**Signing fails?** Gradle won't load `gradle.properties.local`. Instead:
-1. Ensure `RELEASE_*` environment variables are exported to GITHUB_ENV
-2. Gradle will read these directly from environment
+**Signing fails?** Gradle resolves signing credentials in this order:
+1. `RELEASE_*` environment variables (CI exports these from GitHub Secrets via GITHUB_ENV)
+2. `app/signing.properties` (local dev — see "Local Development Signing" below)
+3. Built-in defaults (`app/release.keystore`, alias `shollu-release`)
+
+Note: Gradle never loads `gradle.properties.local`.
 
 ---
 
 ## 💡 Pro Tips
 
-1. **Always increment `versionCode`** before creating new tag
+1. **Release versions come from tags** — `v3.11.0` ships versionName 3.11.0 / versionCode 31100 automatically
 2. **Test debug APK first** on real device before signed release
 3. **AAB needed?** Required for Google Play Store uploads
 4. **Draft releases?** Use draft mode for testing before publishing
@@ -180,7 +183,7 @@ cp app/signing.properties.example app/signing.properties
 # DO NOT COMMIT THIS FILE
 ```
 
-Note: This file is for reference only. The CI system uses environment variables directly.
+Note: `app/signing.properties` IS read by Gradle for local builds (environment variables take precedence). The CI system ignores it and uses environment variables from GitHub Secrets only.
 
 ---
 

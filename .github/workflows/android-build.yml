@@ -2,9 +2,9 @@ name: Android CI - Build & Release APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
     tags:
-      - 'v*'
+      - 'v*.*.*'
   pull_request:
     branches: [ "main" ]
 
@@ -79,6 +79,23 @@ jobs:
         VERSION=${TAG_NAME#v}
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Extracted version: $VERSION"
+
+        # Derive a monotonically increasing versionCode from the semver tag: MAJOR*10000 + MINOR*100 + PATCH
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+        MAJOR=$(echo "${MAJOR:-0}" | tr -cd '0-9');  MAJOR=${MAJOR:-0}
+        MINOR=$(echo "${MINOR:-0}" | tr -cd '0-9');  MINOR=${MINOR:-0}
+        PATCH=$(echo "${PATCH%%-*}" | tr -cd '0-9'); PATCH=${PATCH:-0}
+        # Formula collides if MINOR or PATCH exceeds 99 - refuse rather than emit a colliding code
+        if [ "$MINOR" -gt 99 ] || [ "$PATCH" -gt 99 ]; then
+          echo "::error::Tag v$VERSION: MINOR and PATCH must be <= 99 for versionCode derivation (MAJOR*10000+MINOR*100+PATCH)"
+          exit 1
+        fi
+        VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+        echo "Computed versionCode: $VERSION_CODE"
+
+        # Export for all subsequent steps; build.gradle.kts reads these env vars
+        echo "RELEASE_VERSION_NAME=$VERSION" >> $GITHUB_ENV
+        echo "RELEASE_VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
     
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -97,58 +114,35 @@ jobs:
         SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
       run: |
-        # Create keystore file if secret is provided
-        if [ -n "$KEYSTORE_BASE64" ]; then
-          echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
-          echo "✅ Keystore created successfully at app/release.keystore"
-          echo "RELEASE_STORE_FILE=app/release.keystore" >> $GITHUB_ENV
-        else
-          echo "⚠️ No keystore provided - will use default debug key"
-          echo "RELEASE_STORE_FILE=app/release.keystore" >> $GITHUB_ENV
+        # Release builds must be signed with the release keystore - fail fast if secrets are missing
+        MISSING=""
+        [ -z "$KEYSTORE_BASE64" ] && MISSING="$MISSING KEYSTORE_BASE64"
+        [ -z "$SIGNING_KEY_ALIAS" ] && MISSING="$MISSING SIGNING_KEY_ALIAS"
+        [ -z "$SIGNING_KEY_PASSWORD" ] && MISSING="$MISSING SIGNING_KEY_PASSWORD"
+        [ -z "$SIGNING_STORE_PASSWORD" ] && MISSING="$MISSING SIGNING_STORE_PASSWORD"
+        if [ -n "$MISSING" ]; then
+          echo "::error::Release signing secrets not set:$MISSING — see QUICKSTART.md Step 3 (gh secret set ...)"
+          exit 1
         fi
-        
-        # Export signing credentials as environment variables
-        if [ -n "$SIGNING_KEY_ALIAS" ]; then
-          echo "RELEASE_KEY_ALIAS=$SIGNING_KEY_ALIAS" >> $GITHUB_ENV
-          echo "🔑 Signer alias configured"
-        else
-          echo "⚠️ Signing credentials not provided"
-        fi
-        
-        if [ -n "$SIGNING_KEY_PASSWORD" ]; then
-          echo "RELEASE_KEY_PASSWORD=$SIGNING_KEY_PASSWORD" >> $GITHUB_ENV
-        fi
-        
-        if [ -n "$SIGNING_STORE_PASSWORD" ]; then
-          echo "RELEASE_STORE_PASSWORD=$SIGNING_STORE_PASSWORD" >> $GITHUB_ENV
-        fi
-        
-        # Pass version information to Gradle
-        echo "RELEASE_VERSION_NAME=${{ steps.extract_version.outputs.version }}" >> $GITHUB_ENV
-        echo "PASSING ENV VARS TO GRADLE"
+
+        echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+        echo "✅ Keystore created successfully at app/release.keystore"
+
+        # Export signing credentials for all subsequent steps (build.gradle.kts reads RELEASE_*)
+        echo "RELEASE_STORE_FILE=app/release.keystore" >> $GITHUB_ENV
+        echo "RELEASE_KEY_ALIAS=$SIGNING_KEY_ALIAS" >> $GITHUB_ENV
+        echo "RELEASE_KEY_PASSWORD=$SIGNING_KEY_PASSWORD" >> $GITHUB_ENV
+        echo "RELEASE_STORE_PASSWORD=$SIGNING_STORE_PASSWORD" >> $GITHUB_ENV
     
-    # Build Release APK (Gradle reads RELEASE_* env vars)
+    # Build Release APK (Gradle reads RELEASE_* env vars exported to GITHUB_ENV above)
     - name: Build Release APK
       run: ./gradlew assembleRelease --stacktrace
       continue-on-error: false
-      env:
-        # These are now available to Gradle build.gradle.kts
-        RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
-        RELEASE_KEY_ALIAS: ${{ env.RELEASE_KEY_ALIAS }}
-        RELEASE_KEY_PASSWORD: ${{ env.RELEASE_KEY_PASSWORD }}
-        RELEASE_STORE_PASSWORD: ${{ env.RELEASE_STORE_PASSWORD }}
-        RELEASE_VERSION_NAME: ${{ steps.extract_version.outputs.version }}
-    
+
     # Build AAB (Android App Bundle for Play Store)
     - name: Build AAB
       run: ./gradlew bundleRelease --stacktrace
       continue-on-error: false
-      env:
-        RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
-        RELEASE_KEY_ALIAS: ${{ env.RELEASE_KEY_ALIAS }}
-        RELEASE_KEY_PASSWORD: ${{ env.RELEASE_KEY_PASSWORD }}
-        RELEASE_STORE_PASSWORD: ${{ env.RELEASE_STORE_PASSWORD }}
-        RELEASE_VERSION_NAME: ${{ steps.extract_version.outputs.version }}
     
     # Upload Release APK
     - name: Upload Release APK
@@ -174,7 +168,8 @@ jobs:
         tag_name: ${{ github.ref_name }}  # Use ref_name, not ref (v... instead of refs/tags/v...)
         name: Shollu Android v${{ steps.extract_version.outputs.version }}
         draft: false
-        prerelease: false
+        # Tags with a suffix (v3.11.0-rc1) publish as pre-releases, not stable
+        prerelease: ${{ contains(github.ref_name, '-') }}
         files: |
           app/build/outputs/apk/release/app-release*.apk
           app/build/outputs/bundle/release/*.aab

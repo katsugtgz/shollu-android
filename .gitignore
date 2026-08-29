@@ -17,3 +17,9 @@ PROJECT.md
 TEST_INFRA.md
 ORIGINAL_REQUEST.md
 /app/build
+
+# Release signing credentials — never commit
+*.keystore
+*.jks
+app/signing.properties
+.bughunt/

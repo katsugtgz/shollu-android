@@ -1,18 +1,17 @@
 # ⚠️ SIGNING CREDENTIALS TEMPLATE - DO NOT COMMIT
-# 
-# Copy this file to app/signing.properties for local development ONLY.
-# 
-# NOTE: The CI/CD system does NOT use properties files. Instead, it reads
-# signing credentials directly from environment variables (RELEASE_*):
+#
+# Copy this file to app/signing.properties for local development ONLY:
+#   cp app/signing.properties.example app/signing.properties
+#
+# Gradle (app/build.gradle.kts) reads app/signing.properties automatically
+# for local builds. Environment variables (RELEASE_*) take precedence —
+# which is how the CI/CD system supplies credentials from GitHub Secrets:
 #   - RELEASE_STORE_FILE
-#   - RELEASE_KEY_ALIAS  
+#   - RELEASE_KEY_ALIAS
 #   - RELEASE_KEY_PASSWORD
 #   - RELEASE_STORE_PASSWORD
 #
-# These env vars are exported from GitHub Secrets in the workflow file.
-# For local builds, you can either:
-# 1. Export the same env vars manually in your shell
-# 2. Create app/signing.properties (never commit this file!)
+# Never commit app/signing.properties (it is git-ignored).
 
 android.useAndroidX=true
 android.enableJetifier=true
