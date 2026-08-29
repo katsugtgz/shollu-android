@@ -46,7 +46,7 @@ abstract class SholluDatabase : RoomDatabase() {
                     "shollu_database"
                 )
                 .addCallback(SholluDatabaseCallback(context.applicationContext, scope))
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                .fallbackToDestructiveMigration(dropAllTables = false)
                 .build()
                 INSTANCE = instance
                 instance
