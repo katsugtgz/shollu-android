@@ -24,6 +24,8 @@ buildscript {
             "com.google.guava:guava:33.4.8-jre",
             "commons-io:commons-io:2.16.1",
             "org.apache.commons:commons-compress:1.27.1",
+            // pulled in by commons-compress 1.27.1; alert 58 (< 3.18.0, uncontrolled recursion)
+            "org.apache.commons:commons-lang3:3.18.0",
             "org.bitbucket.b_c:jose4j:0.9.6",
             "org.jdom:jdom2:2.0.6.1",
             // grpc 1.57 (AGP's UTP) is incompatible with netty >= 4.1.101/4.1.111 (grpc-java#10665,
@@ -58,6 +60,7 @@ val dependencySecurityFloors = mapOf(
     "com.google.guava:guava" to "32.0.0-android", // alerts 3,4 (guava only — listenablefuture/failureaccess are separate versioned artifacts)
     "commons-io" to "2.14.0",               // alert 12
     "org.apache.commons:commons-compress" to "1.26.0", // alerts 5,6
+    "org.apache.commons:commons-lang3" to "3.18.0",    // alert 58
     "org.bitbucket.b_c:jose4j" to "0.9.6",  // alert 24
     "org.jdom:jdom2" to "2.0.6.1",          // alert 21
 )
