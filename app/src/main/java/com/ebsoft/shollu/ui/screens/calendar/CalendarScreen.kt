@@ -204,7 +204,7 @@ private fun MonthlyScheduleView(
                         Text(item.getFormattedTimeFor(PrayerType.MAGHRIB), fontSize = 11.sp, modifier = Modifier.width(44.dp))
                         Text(item.getFormattedTimeFor(PrayerType.ISYA), fontSize = 11.sp, modifier = Modifier.width(42.dp))
                     }
-                    Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                 }
             }
         }

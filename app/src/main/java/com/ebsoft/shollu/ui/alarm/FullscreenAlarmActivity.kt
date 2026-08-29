@@ -15,7 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -200,7 +200,7 @@ fun FullscreenAlarmScreen(
                     .height(56.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.VolumeOff,
+                    imageVector = Icons.AutoMirrored.Filled.VolumeOff,
                     contentDescription = null,
                     tint = Color.Black
                 )
