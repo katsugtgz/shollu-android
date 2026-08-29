@@ -122,7 +122,7 @@ No Play Store needed — grab the signed release APK:
 ### Prerequisites
 - Android Studio (Koala, Ladybug, or newer)
 - JDK 17
-- Android SDK 35
+- Android SDK 37 (compileSdk 37 / targetSdk 36)
 
 ### Clone & Build
 ```bash
