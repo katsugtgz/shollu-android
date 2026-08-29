@@ -23,3 +23,6 @@ ORIGINAL_REQUEST.md
 *.jks
 app/signing.properties
 .bughunt/
+
+# Kotlin build cache
+.kotlin/
