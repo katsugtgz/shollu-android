@@ -22,16 +22,16 @@ buildscript {
             "io.netty:netty-resolver:4.1.137.Final",
             "io.netty:netty-transport:4.1.137.Final",
             "io.netty:netty-transport-native-unix-common:4.1.137.Final",
-            "org.bouncycastle:bcprov-jdk18on:1.84",
-            "org.bouncycastle:bcpkix-jdk18on:1.84",
-            "org.bouncycastle:bcutil-jdk18on:1.84",
-            "com.google.protobuf:protobuf-java:3.25.5",
-            "com.google.protobuf:protobuf-java-util:3.25.5",
-            "com.google.guava:guava:33.4.8-jre",
-            "commons-io:commons-io:2.16.1",
-            "org.apache.commons:commons-compress:1.27.1",
-            // pulled in by commons-compress 1.27.1; alert 58 (< 3.18.0, uncontrolled recursion)
-            "org.apache.commons:commons-lang3:3.18.0",
+            "org.bouncycastle:bcprov-jdk18on:1.85",
+            "org.bouncycastle:bcpkix-jdk18on:1.85",
+            "org.bouncycastle:bcutil-jdk18on:1.85",
+            "com.google.protobuf:protobuf-java:3.25.9",
+            "com.google.protobuf:protobuf-java-util:3.25.9",
+            "com.google.guava:guava:33.7.1-jre",
+            "commons-io:commons-io:2.22.0",
+            "org.apache.commons:commons-compress:1.28.0",
+            // pulled in by commons-compress; alert 58 (< 3.18.0, uncontrolled recursion)
+            "org.apache.commons:commons-lang3:3.20.0",
             "org.bitbucket.b_c:jose4j:0.9.6",
             "org.jdom:jdom2:2.0.6.1",
             // grpc 1.57 (AGP's UTP) is incompatible with netty >= 4.1.101/4.1.111 (grpc-java#10665,
@@ -60,12 +60,12 @@ plugins {
 // Floors are per-package-family; anything resolving below these fails the gate.
 val dependencySecurityFloors = mapOf(
     "io.netty" to "4.1.137.Final",          // alerts 1,2,14,16,18-20,23,25,26,29,31-37,39,40-44,46-57
-    "org.bouncycastle" to "1.84",           // alerts 8,9,10,13,17,22,27,28,45
-    "com.google.protobuf" to "3.25.5",      // alert 11
+    "org.bouncycastle" to "1.85",           // alerts 8,9,10,13,17,22,27,28,45 (1.85.2 exists for bcprov only)
+    "com.google.protobuf" to "3.25.9",      // alert 11
     "com.google.guava:guava" to "32.0.0-android", // alerts 3,4 (guava only — listenablefuture/failureaccess are separate versioned artifacts)
-    "commons-io" to "2.14.0",               // alert 12
-    "org.apache.commons:commons-compress" to "1.26.0", // alerts 5,6
-    "org.apache.commons:commons-lang3" to "3.18.0",    // alert 58
+    "commons-io" to "2.22.0",               // alert 12
+    "org.apache.commons:commons-compress" to "1.28.0", // alerts 5,6
+    "org.apache.commons:commons-lang3" to "3.20.0",    // alert 58
     "org.bitbucket.b_c:jose4j" to "0.9.6",  // alert 24
     "org.jdom:jdom2" to "2.0.6.1",          // alert 21
 )
