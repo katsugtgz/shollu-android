@@ -15,6 +15,14 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "3.10.0"
+        
+        // Version from git tag if available
+        if (project.hasProperty("RELEASE_VERSION_NAME")) {
+            versionName = project.property("RELEASE_VERSION_NAME").toString()
+        }
+        if (project.hasProperty("RELEASE_VERSION_CODE")) {
+            versionCode = project.property("RELEASE_VERSION_CODE").toInteger()
+        }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -24,11 +32,14 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            
+            // Signing configuration
+            signingConfig = signingConfigs.named("release")
         }
     }
     compileOptions {
@@ -41,6 +52,24 @@ android {
     buildFeatures {
         compose = true
     }
+    signingConfigs {
+        create("release") {
+            // Try to load local signing.properties first, then fall back to environment variables
+            storeFile = rootProject.file(if (file("signing.properties").exists()) "signing.properties" else "../release.keystore")
+            
+            // Check for environment variables (CI) or local file
+            val storePath = System.getenv("RELEASE_STORE_FILE") ?: "../release.keystore"
+            val keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "shollu-release"
+            val keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            val storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+            
+            storeFile = rootProject.file(storePath)
+            keyAlias = keyAlias
+            if (keyPassword != null) keyPassword = keyPassword
+            if (storePassword != null) storePassword = storePassword
+        }
+    }
+    
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

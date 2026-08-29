@@ -1,0 +1,13 @@
+# Add your signing credentials here (local, NOT committed)
+# Copy this file and rename to gradle.properties.local
+
+android.useAndroidX=true
+android.enableJetifier=true
+
+# Release Signing - Use keytool to generate:
+# keytool -genkeypair -v -keystore release.keystore -alias shollu-release -keyalg RSA -keysize 2048 -validity 10000
+
+RELEASE_KEY_ALIAS=shollu-release
+RELEASE_STORE_FILE=../release.keystore
+RELEASE_KEY_PASSWORD=YOUR_KEY_PASSWORD_HERE
+RELEASE_STORE_PASSWORD=YOUR_STORE_PASSWORD_HERE
