@@ -27,6 +27,16 @@ class SholluPreferences(private val context: Context) {
         val SELECTED_ELEVATION = doublePreferencesKey("selected_elevation")
         val SELECTED_TIMEZONE = doublePreferencesKey("selected_timezone")
 
+        /**
+         * True when the selected city came from GPS: its stored timezone is a one-time DST
+         * snapshot of the device offset and must be re-derived on ACTION_TIMEZONE_CHANGED.
+         * Fixed-list cities keep their canonical zone and are never re-derived.
+         */
+        val SELECTED_CITY_IS_GPS = booleanPreferencesKey("selected_city_is_gps")
+
+        /** Seeded-once marker for the default preset reminders (see SholluDatabase.seedPlan). */
+        val DEFAULT_PRESETS_SEEDED = booleanPreferencesKey("default_presets_seeded")
+
         val CALCULATION_METHOD = stringPreferencesKey("calculation_method")
         val ASR_JURISTIC = stringPreferencesKey("asr_juristic")
         val IHTIYAT_MINUTES = intPreferencesKey("ihtiyat_minutes")
@@ -132,13 +142,36 @@ class SholluPreferences(private val context: Context) {
         )
     }
 
-    suspend fun updateCity(city: City) {
+    /** True when the selected city was GPS-derived (its timezone is a DST snapshot). */
+    val isSelectedCityGps: Flow<Boolean> = safeDataStore.map { prefs ->
+        prefs[SELECTED_CITY_IS_GPS] ?: false
+    }
+
+    /** Seeded-once marker: true once default presets have been seeded (successfully). */
+    val defaultPresetsSeeded: Flow<Boolean> = safeDataStore.map { prefs ->
+        prefs[DEFAULT_PRESETS_SEEDED] ?: false
+    }
+
+    /**
+     * Persist the selected city. [isGps] marks a GPS-derived city (DST-re-derivation eligible);
+     * fixed-list selections keep the default false, so choosing a city from the list always
+     * clears the flag.
+     */
+    suspend fun updateCity(city: City, isGps: Boolean = false) {
         context.dataStore.edit { prefs ->
             prefs[SELECTED_CITY_NAME] = city.name
             prefs[SELECTED_LATITUDE] = city.latitude
             prefs[SELECTED_LONGITUDE] = city.longitude
             prefs[SELECTED_ELEVATION] = city.elevation
             prefs[SELECTED_TIMEZONE] = city.timezone
+            prefs[SELECTED_CITY_IS_GPS] = isGps
+        }
+    }
+
+    /** Write the seeded-once marker after a successful default-preset seeding. */
+    suspend fun markDefaultPresetsSeeded() {
+        context.dataStore.edit { prefs ->
+            prefs[DEFAULT_PRESETS_SEEDED] = true
         }
     }
 

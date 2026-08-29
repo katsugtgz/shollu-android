@@ -15,14 +15,14 @@ import com.ebsoft.shollu.data.model.PrayerType
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
+import com.ebsoft.shollu.receiver.AlarmScheduler
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class OngoingNotificationService : Service() {
@@ -96,7 +96,9 @@ class OngoingNotificationService : Service() {
 
                 // Update notification on prayer boundaries without 1Hz heavy polling loop
                 while (isActive) {
-                    val now = LocalDateTime.now()
+                    // "Now" in the CITY's frame of reference: prayer times are city wall times,
+                    // so the next-prayer selection must not compare them to the device zone.
+                    val now = AlarmTime.cityWallClockNow(timezoneHours = config.city.timezone)
                     val todayPrayerTimes = prayerRepository.calculateForDate(
                         date = now.toLocalDate(),
                         city = config.city,
@@ -116,18 +118,20 @@ class OngoingNotificationService : Service() {
                         offsets = config.offsets
                     )
 
-                    val targetEpochMillis = targetDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    // Convert using the CITY's fixed offset — never the device zone.
+                    val targetEpochMillis = AlarmTime.epochMillisForCity(targetDateTime, config.city.timezone)
                     val prayerDisplayName = nextPrayerType.displayName
                     val formattedPrayerTime = nextPrayerTime.format(DateTimeFormatter.ofPattern("HH:mm"))
 
                     updateNotification(
-                        title = "Menuju $prayerDisplayName ($formattedPrayerTime WIB)",
+                        title = "Menuju $prayerDisplayName ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",
                         content = "${config.city.name} • Shollu Pengingat Sholat",
                         subText = "Hitung Mundur Sholat",
                         targetEpochMillis = targetEpochMillis
                     )
 
-                    val durationMillis = Duration.between(now, targetDateTime).toMillis()
+                    // Real-instant countdown: epoch difference, immune to zone mismatches.
+                    val durationMillis = targetEpochMillis - System.currentTimeMillis()
                     // Sleep until target prayer time is reached (+ 1s buffer), capped at 1h for clock drift safety
                     val sleepMillis = durationMillis.coerceIn(1_000L, 3_600_000L) + 1_000L
                     delay(sleepMillis)
@@ -152,13 +156,14 @@ class OngoingNotificationService : Service() {
         offsets: Map<String, Int>
     ): NextPrayerTarget {
         val currentTime = now.toLocalTime()
+        // Invalid (polar) Subuh/Isya placeholders must never become countdown targets.
         val majorPrayers = listOf(
             PrayerType.SUBUH to todayTimes.subuh,
             PrayerType.DZUHUR to todayTimes.dzuhur,
             PrayerType.ASHAR to todayTimes.ashar,
             PrayerType.MAGHRIB to todayTimes.maghrib,
             PrayerType.ISYA to todayTimes.isya
-        )
+        ).filter { (type, _) -> AlarmScheduler.isPrayerValid(type, todayTimes) }
 
         for ((type, time) in majorPrayers) {
             if (currentTime.isBefore(time)) {
@@ -166,7 +171,11 @@ class OngoingNotificationService : Service() {
             }
         }
 
-        // Next is tomorrow's Subuh (Midnight Rollover)
+        // Next: after-Isya / midnight rollover to TOMORROW's first VALID major prayer.
+        // Polar safety: an invalid (placeholder) Subuh is never the countdown target — no
+        // alarm will fire for it, so counting down to it would fabricate a deadline. The
+        // first valid slot of the new day (Subuh, else Dzuhur/Ashar/Maghrib/Isya) is always
+        // alarm-backed, so a target always exists (see AlarmScheduler.nextValidRolloverTarget).
         val tomorrow = now.toLocalDate().plusDays(1)
         val tomorrowTimes = prayerRepository.calculateForDate(
             date = tomorrow,
@@ -176,7 +185,12 @@ class OngoingNotificationService : Service() {
             ihtiyat = ihtiyat,
             offsets = offsets
         )
-        return NextPrayerTarget(PrayerType.SUBUH, tomorrowTimes.subuh, LocalDateTime.of(tomorrow, tomorrowTimes.subuh))
+        val rollover = AlarmScheduler.nextValidRolloverTarget(tomorrowTimes, tomorrow)
+        return NextPrayerTarget(
+            type = rollover.first,
+            time = rollover.second,
+            targetDateTime = LocalDateTime.of(rollover.third, rollover.second)
+        )
     }
 
     private fun updateNotification(

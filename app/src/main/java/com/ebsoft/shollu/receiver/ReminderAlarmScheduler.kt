@@ -82,12 +82,32 @@ object ReminderAlarmScheduler {
     }
 
     /**
-     * Schedule all active reminders from Room database with AlarmManager.
+     * True when a one-shot (ONCE) reminder's time has already passed. Such a reminder missed
+     * while the device was off (boot / package-replaced reschedule) must NOT be re-armed for
+     * tomorrow — it expired. Recurring reminders are never "expired".
      */
-    suspend fun scheduleAllActiveReminders(context: Context) {
+    fun hasExpiredOnceReminder(reminder: ReminderEntity, now: LocalDateTime): Boolean {
+        if (!reminder.daysOfWeek.isOnce) return false
+        val todayTarget = now.toLocalDate().atTime(reminder.timeHour, reminder.timeMinute, 0)
+        return !todayTarget.isAfter(now)
+    }
+
+    /**
+     * Schedule all active reminders from Room database with AlarmManager.
+     *
+     * @param reschedulingAfterBoot true on the BOOT_COMPLETED / MY_PACKAGE_REPLACED path only:
+     * a past-due ONCE reminder is not re-armed for tomorrow (that would re-fire a stale event);
+     * instead it is disabled in the DB and its alarm cancelled — documented as expired.
+     */
+    suspend fun scheduleAllActiveReminders(context: Context, reschedulingAfterBoot: Boolean = false) {
         val db = SholluDatabase.getDatabase(context, CoroutineScope(Dispatchers.IO))
         val activeReminders = db.reminderDao().getActiveReminders()
         for (reminder in activeReminders) {
+            if (reschedulingAfterBoot && hasExpiredOnceReminder(reminder, LocalDateTime.now())) {
+                db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
+                cancelReminder(context, reminder.id)
+                continue
+            }
             scheduleReminder(context, reminder)
         }
     }

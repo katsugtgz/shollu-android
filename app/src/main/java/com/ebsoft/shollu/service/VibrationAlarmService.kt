@@ -7,8 +7,15 @@ import android.content.pm.ServiceInfo
 import android.os.*
 import androidx.core.app.NotificationCompat
 import com.ebsoft.shollu.R
+import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.receiver.PrayerAlarmReceiver
 import com.ebsoft.shollu.ui.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class VibrationAlarmService : Service() {
 
@@ -25,6 +32,7 @@ class VibrationAlarmService : Service() {
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var autoStopHandler: Handler? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
@@ -59,11 +67,21 @@ class VibrationAlarmService : Service() {
         val prayerTime = intent?.getStringExtra(EXTRA_PRAYER_TIME) ?: ""
         val isPrePrayer = intent?.getBooleanExtra(EXTRA_IS_PRE_PRAYER, false) ?: false
 
-        startMaxVibration(prayerName, prayerTime, isPrePrayer)
+        // Read the "Getar Intensitas Maksimal" preference (runBlocking-free) before choosing
+        // the waveform: max -> explicit 255-amplitude pattern, gentle -> default amplitudes.
+        serviceScope.launch {
+            val maxIntensity = try {
+                SholluPreferences(applicationContext).isMaxVibrationEnabled.first()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                true
+            }
+            startMaxVibration(prayerName, prayerTime, isPrePrayer, maxIntensity)
+        }
         return START_NOT_STICKY
     }
 
-    private fun startMaxVibration(prayerName: String, prayerTime: String, isPrePrayer: Boolean) {
+    private fun startMaxVibration(prayerName: String, prayerTime: String, isPrePrayer: Boolean, maxIntensity: Boolean) {
         try {
             if (wakeLock?.isHeld == false) {
                 wakeLock?.acquire(60_000L) // Max 60 seconds wake lock safety
@@ -125,17 +143,20 @@ class VibrationAlarmService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
 
-            // Waveform for MAXIMUM INTENSITY vibration:
-            // Pattern: [delay 0ms, vibrate 800ms, pause 300ms, vibrate 800ms, pause 300ms, vibrate 1200ms, pause 500ms]
-            val timings = longArrayOf(0, 800, 300, 800, 300, 1200, 500)
-            val amplitudes = intArrayOf(0, 255, 0, 255, 0, 255, 0) // Max amplitude 255
+            // Waveform selected from the "Getar Intensitas Maksimal" preference:
+            // max -> explicit 255-amplitude pattern; gentle -> default amplitude pattern.
+            val waveform = vibrationWaveformFor(maxIntensity)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val effect = VibrationEffect.createWaveform(timings, amplitudes, 0) // Loop index 0
+                val effect = if (waveform.amplitudes != null) {
+                    VibrationEffect.createWaveform(waveform.timings, waveform.amplitudes, 0) // Loop index 0
+                } else {
+                    VibrationEffect.createWaveform(waveform.timings, 0)
+                }
                 vibrator?.vibrate(effect)
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(timings, 0)
+                vibrator?.vibrate(waveform.timings, 0)
             }
 
             // Auto stop after 45 seconds to prevent excessive battery/motor heat
@@ -194,6 +215,7 @@ class VibrationAlarmService : Service() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         try {
             stopVibrationAndSelf()
         } finally {

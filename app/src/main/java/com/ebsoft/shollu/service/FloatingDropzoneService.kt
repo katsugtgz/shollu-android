@@ -11,18 +11,34 @@ import android.view.*
 import android.widget.TextView
 import com.ebsoft.shollu.R
 import com.ebsoft.shollu.data.model.PrayerTimes
-import com.ebsoft.shollu.data.model.PrayerType
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import java.time.Duration
-import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
+/** Snapshot of every preference that changes the computed prayer schedule. */
+private data class ScheduleConfigKey(
+    val city: com.ebsoft.shollu.data.model.City,
+    val method: com.ebsoft.shollu.data.model.CalculationMethod,
+    val juristic: com.ebsoft.shollu.data.model.AsrJuristic,
+    val ihtiyatMinutes: Int,
+    val customOffsets: Map<String, Int>
+)
+
 class FloatingDropzoneService : Service() {
+
+    companion object {
+        private val _isRunning = MutableStateFlow(false)
+
+        /** Truthful running state so SettingsScreen can reflect it on the switch. */
+        val isRunning: StateFlow<Boolean> = _isRunning
+    }
 
     private var windowManager: WindowManager? = null
     private var floatingView: View? = null
@@ -34,6 +50,7 @@ class FloatingDropzoneService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        _isRunning.value = true
         preferences = SholluPreferences(applicationContext)
         prayerRepository = PrayerRepository(preferences)
         createFloatingDropzone()
@@ -130,6 +147,7 @@ class FloatingDropzoneService : Service() {
         // Live countdown updater
         updateJob = serviceScope.launch {
             var cachedDate: java.time.LocalDate? = null
+            var cachedConfig: ScheduleConfigKey? = null
             var cachedTodayTimes: PrayerTimes? = null
             var cachedTomorrowTimes: PrayerTimes? = null
 
@@ -140,11 +158,17 @@ class FloatingDropzoneService : Service() {
                 val ihtiyat = preferences.ihtiyatMinutes.first()
                 val offsets = preferences.customOffsets.first()
 
-                val now = LocalDateTime.now()
+                // "Now" in the CITY's frame of reference: prayer times are city wall times,
+                // so both the day bucketing and the next-prayer comparison must never use the
+                // device zone.
+                val now = AlarmTime.cityWallClockNow(timezoneHours = city.timezone)
                 val today = now.toLocalDate()
+                val configKey = ScheduleConfigKey(city, method, juristic, ihtiyat, offsets)
 
-                if (cachedDate != today || cachedTodayTimes == null || cachedTomorrowTimes == null) {
+                // Recompute when the day changed OR any schedule-affecting preference changed.
+                if (cachedDate != today || cachedConfig != configKey || cachedTodayTimes == null || cachedTomorrowTimes == null) {
                     cachedDate = today
+                    cachedConfig = configKey
                     cachedTodayTimes = prayerRepository.calculateForDate(
                         date = today,
                         city = city,
@@ -163,19 +187,18 @@ class FloatingDropzoneService : Service() {
                     )
                 }
 
-                val (nextType, nextTime) = cachedTodayTimes.getNextPrayer(now.toLocalTime())
+                // Shared target logic incl. after-Isya rollover to tomorrow's (real) Subuh.
+                val (effectiveTargetType, effectiveTargetTime, targetDateTime) =
+                    cachedTodayTimes.getNextPrayerTarget(now, cachedTomorrowTimes)
 
-                // Fix midnight rollover: If next prayer time is earlier than or equal to now (past Isya),
-                // advance target to tomorrow's Subuh to avoid negative duration / 00:00:00 freeze.
-                val (effectiveTargetType, effectiveTargetTime, targetDateTime) = if (nextTime.isBefore(now.toLocalTime()) || nextTime == now.toLocalTime()) {
-                    val tomorrowSubuh = cachedTomorrowTimes.subuh
-                    Triple(PrayerType.SUBUH, tomorrowSubuh, LocalDateTime.of(today.plusDays(1), tomorrowSubuh))
-                } else {
-                    Triple(nextType, nextTime, LocalDateTime.of(today, nextTime))
-                }
-
-                val duration = Duration.between(now, targetDateTime)
-                val totalSeconds = duration.seconds.coerceAtLeast(0)
+                // Real-instant countdown: epoch delta through the city's fixed offset —
+                // comparing city wall times with device LocalDateTime.now() would miscount
+                // whenever the device zone differs from the city.
+                val totalSeconds = AlarmTime.remainingSecondsUntilCityWall(
+                    target = targetDateTime,
+                    timezoneHours = city.timezone,
+                    deviceEpochMillis = System.currentTimeMillis()
+                )
 
                 val m = (totalSeconds % 3600) / 60
                 val s = totalSeconds % 60
@@ -190,6 +213,7 @@ class FloatingDropzoneService : Service() {
     }
 
     override fun onDestroy() {
+        _isRunning.value = false
         updateJob?.cancel()
         serviceScope.cancel()
         if (floatingView != null) {

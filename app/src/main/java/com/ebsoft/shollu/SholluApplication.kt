@@ -1,6 +1,7 @@
 package com.ebsoft.shollu
 
 import android.app.Application
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -14,6 +15,7 @@ import com.ebsoft.shollu.data.repository.IReminderRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.data.repository.ReminderRepository
 import com.ebsoft.shollu.receiver.AlarmScheduler
+import com.ebsoft.shollu.receiver.ReminderAlarmScheduler
 import com.ebsoft.shollu.service.OngoingNotificationService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,19 +41,34 @@ class SholluApplication : Application() {
             // 1. Preload cities database from JSON if first run
             cityRepository.initializeCitiesIfNeeded()
 
-            // 2. Schedule upcoming exact alarms
+            // 2. Seed default preset reminders BEFORE arming reminders, so enabled presets
+            //    actually get alarms on a fresh install (seeded-once marker via preferences)
+            database.ensureDefaultPresets(preferences)
+
+            // 3. Schedule upcoming exact alarms
             AlarmScheduler.scheduleNextPrayerAlarms(this@SholluApplication)
 
-            // 3. Start Ongoing Status Bar Notification if enabled
+            // 4. Arm enabled agenda reminders (now includes the freshly seeded presets)
+            ReminderAlarmScheduler.scheduleAllActiveReminders(this@SholluApplication)
+
+            // 5. Start Ongoing Status Bar Notification if enabled
             val isOngoingEnabled = preferences.isOngoingNotificationEnabled.first()
             if (isOngoingEnabled) {
                 val ongoingIntent = Intent(this@SholluApplication, OngoingNotificationService::class.java).apply {
                     action = OngoingNotificationService.ACTION_START_ONGOING
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(ongoingIntent)
-                } else {
-                    startService(ongoingIntent)
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(ongoingIntent)
+                    } else {
+                        startService(ongoingIntent)
+                    }
+                } catch (e: ForegroundServiceStartNotAllowedException) {
+                    // Android 12+: app is in the background (e.g. widget APPWIDGET_UPDATE cold
+                    // start) — foreground-service starts from background are restricted.
+                    e.printStackTrace()
+                } catch (e: IllegalStateException) {
+                    e.printStackTrace()
                 }
             }
         }
