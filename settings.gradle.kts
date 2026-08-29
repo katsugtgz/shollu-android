@@ -14,4 +14,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Shollu"
+// Plugin-classpath dependency floors for GH Dependabot alerts are enforced in the root
+// build.gradle.kts (buildscript resolutionStrategy forces + verifyDependencySecurity gate).
 include(":app")
