@@ -1,6 +1,12 @@
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 
 buildscript {
+    // AGP 9 built-in Kotlin: AGP carries a runtime KGP floor (2.2.10) and auto-applies it.
+    // Declaring KGP here raises the effective compiler to 2.4.10 (per AGP 9 release notes).
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10")
+    }
+
     // Dependabot alerts 1-57: force patched versions of AGP plugin-classpath transitives.
     // These are build-time-only deps (the app runtime classpath has none of them).
     configurations.getByName("classpath") {
@@ -46,7 +52,6 @@ buildscript {
 
 plugins {
     alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
 }
