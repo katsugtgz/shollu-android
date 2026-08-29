@@ -40,6 +40,11 @@ jobs:
         echo "=== App Module ==="
         ls -la app/ || true
     
+    # Fail fast if any build/runtime dependency resolves below a Dependabot patched floor
+    - name: Dependency Security Gate
+      run: ./gradlew verifyDependencySecurity --stacktrace
+      continue-on-error: false
+
     # Run tests first (fail build if tests fail)
     - name: Run Tests
       run: ./gradlew test --stacktrace
