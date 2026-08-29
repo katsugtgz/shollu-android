@@ -22,9 +22,9 @@ class AlarmAndSchedulerTest {
     fun testPrayerRequestCodeNoCollisionsAcrossFullYear() {
         val seenCodes = HashSet<Int>()
         val testYear = 2026
-
-        for (dayOfYear in 1..366) {
-            val date = LocalDate.ofYearDay(testYear, if (dayOfYear == 366) 365 else dayOfYear)
+        val totalDays = if (java.time.Year.of(testYear).isLeap) 366 else 365
+        for (dayOfYear in 1..totalDays) {
+            val date = LocalDate.ofYearDay(testYear, dayOfYear)
             for (prayer in PrayerType.values()) {
                 val mainCode = AlarmScheduler.getRequestCode(date, prayer, isPrePrayer = false)
                 val preCode = AlarmScheduler.getRequestCode(date, prayer, isPrePrayer = true)
