@@ -105,6 +105,18 @@
 
 ---
 
+## 📥 Download & Install
+
+No Play Store needed — grab the signed release APK:
+
+1. Download `shollu-v3.10.0.apk` from the [Releases page](https://github.com/katsugtgz/shollu-android/releases/latest).
+2. Open it on your device (Android 8.0+). If prompted, allow *"Install unknown apps"* for your browser/file manager.
+3. Install. First launch preloads the city database and arms prayer alarms automatically — 100% offline, no account, no internet required.
+
+> Upgrades install over previous versions signed with the same key. If Android refuses an update, uninstall the old copy first (this wipes local reminders/settings).
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
