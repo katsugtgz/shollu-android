@@ -101,7 +101,7 @@
 - **Background & Alarms**: Exact AlarmManager (`SCHEDULE_EXACT_ALARM`, `USE_EXACT_ALARM`), Foreground Services, Coroutines & Flow
 - **Widgets**: Jetpack Glance 1.1.1
 - **Location**: Google Play Services Location & Android Geocoder
-- **Target SDK**: Android 15 (API 35) | **Min SDK**: Android 8.0 (API 26)
+- **Target SDK**: Android 16 (API 36) | **Min SDK**: Android 8.0 (API 26)
 
 ---
 
