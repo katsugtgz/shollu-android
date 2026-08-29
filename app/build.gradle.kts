@@ -30,6 +30,26 @@ android {
         }
     }
 
+    // Define signing configs BEFORE buildTypes (required for proper evaluation order)
+    signingConfigs {
+        create("release") {
+            // Default keystore path
+            storeFile = rootProject.file("app/release.keystore")
+            keyAlias = "shollu-release"
+            
+            // Try environment variables first (CI), then fall back to system defaults
+            val envStoreFile = System.getenv("RELEASE_STORE_FILE")
+            val envKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
+            val envKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            val envStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
+            
+            if (envStoreFile != null) storeFile = rootProject.file(envStoreFile)
+            if (envKeyAlias != null) keyAlias = envKeyAlias
+            if (envKeyPassword != null) keyPassword = envKeyPassword
+            if (envStorePassword != null) storePassword = envStorePassword
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -38,8 +58,13 @@ android {
                 "proguard-rules.pro"
             )
             
-            // Signing configuration
-            signingConfig = signingConfigs.named("release")
+            // Signing configuration - use getByName since we defined it above
+            signingConfig = signingConfigs.getByName("release")
+        }
+        
+        debug {
+            // Always have a valid signing config for debug builds
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -51,23 +76,6 @@ android {
     }
     buildFeatures {
         compose = true
-    }
-    signingConfigs {
-        create("release") {
-            // Try to load local signing.properties first, then fall back to environment variables
-            storeFile = rootProject.file(if (file("signing.properties").exists()) "signing.properties" else "../release.keystore")
-            
-            // Check for environment variables (CI) or local file
-            val storePath = System.getenv("RELEASE_STORE_FILE") ?: "../release.keystore"
-            val keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "shollu-release"
-            val keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
-            val storePassword = System.getenv("RELEASE_STORE_PASSWORD")
-            
-            storeFile = rootProject.file(storePath)
-            keyAlias = keyAlias
-            if (keyPassword != null) keyPassword = keyPassword
-            if (storePassword != null) storePassword = storePassword
-        }
     }
     
     packaging {

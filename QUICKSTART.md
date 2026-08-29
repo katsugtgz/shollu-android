@@ -32,32 +32,53 @@ $keytool = Join-Path $JAVA_HOME "bin\keytool.exe"
 & $keytool -genkeypair -v -keystore app/release.keystore -alias shollu-release -keyalg RSA -keysize 2048 -validity 10000 -storepass YOUR_PASSWORD -keypass YOUR_PASSWORD
 ```
 
+**⚠️ CRITICAL:** The `app/release.keystore` file contains your signing credentials. **DO NOT COMMIT IT TO GIT**.
+
 ---
 
-### Step 2: Set GitHub Secrets 🔐
+### Step 2: Add Keystore to .gitignore 🔒
+
+Before committing anything, add the keystore to gitignore:
+
+```bash
+echo "app/release.keystore" >> .gitignore
+echo "app/signing.properties" >> .gitignore
+```
+
+This prevents accidentally leaking your signing credentials.
+
+---
+
+### Step 3: Set GitHub Secrets 🔐
 
 Run these commands (replace passwords!):
 
 ```bash
 # Set keystore as base64
-base64 -i app/release.keystore | tr -d '\n' | gh secret set RELEASE_KEYSTORE_BASE64
+base64 -i app/release.keystore | tr -d '\n' | gh secret set KEYSTORE_BASE64
 
 # Set credentials (you'll be prompted to enter values)
-gh secret set RELEASE_KEY_ALIAS
-gh secret set RELEASE_STORE_PASSWORD  
-gh secret set RELEASE_KEY_PASSWORD
+gh secret set SIGNING_KEY_ALIAS
+gh secret set SIGNING_STORE_PASSWORD  
+gh secret set SIGNING_KEY_PASSWORD
 ```
 
-**⚠️ IMPORTANT**: Store passwords securely! Don't commit them anywhere.
+**⚠️ IMPORTANT**: These are the exact secret names the CI workflow expects:
+- `KEYSTORE_BASE64` - Base64-encoded keystore file
+- `SIGNING_KEY_ALIAS` - Keystore alias (e.g., `shollu-release`)
+- `SIGNING_STORE_PASSWORD` - Keystore store password
+- `SIGNING_KEY_PASSWORD` - Key password
+
+Don't mix up with older variable names!
 
 ---
 
-### Step 3: Build Test APK Locally First
+### Step 4: Build Test APK Locally First
 
 Before pushing anything:
 
 ```bash
-# Test build locally
+# Test build locally (debug only)
 ./gradlew assembleDebug
 
 # Check output at:
@@ -68,7 +89,7 @@ Upload to your phone and test!
 
 ---
 
-### Step 4: Push & Test CI
+### Step 5: Push & Test CI
 
 ```bash
 git add .
@@ -84,7 +105,7 @@ After ~3 minutes → Debug APK ready in Artifacts!
 
 ---
 
-### Step 5: Create Your FIRST Release 📦
+### Step 6: Create Your FIRST Release 📦
 
 Update version in `app/build.gradle.kts`:
 ```kotlin
@@ -123,9 +144,17 @@ git push && git push origin v3.11.0
 ./gradlew test --stacktrace
 ```
 
-**Keystore error?** Ensure all 4 secrets are set correctly
+**Keystore error?** Ensure all 4 secrets are set correctly:
+- `KEYSTORE_BASE64`
+- `SIGNING_KEY_ALIAS`
+- `SIGNING_STORE_PASSWORD`
+- `SIGNING_KEY_PASSWORD`
 
 **Version not updating?** Make sure `versionCode` increments each release
+
+**Signing fails?** Gradle won't load `gradle.properties.local`. Instead:
+1. Ensure `RELEASE_*` environment variables are exported to GITHUB_ENV
+2. Gradle will read these directly from environment
 
 ---
 
@@ -135,18 +164,37 @@ git push && git push origin v3.11.0
 2. **Test debug APK first** on real device before signed release
 3. **AAB needed?** Required for Google Play Store uploads
 4. **Draft releases?** Use draft mode for testing before publishing
+5. **Never commit `app/release.keystore`** - add it to `.gitignore` immediately after generation
+
+---
+
+## 🔧 Local Development Signing (Optional)
+
+For local testing with a custom signing config, create `app/signing.properties`:
+
+```bash
+# Copy the example file
+cp app/signing.properties.example app/signing.properties
+
+# Edit app/signing.properties with your credentials (local only!)
+# DO NOT COMMIT THIS FILE
+```
+
+Note: This file is for reference only. The CI system uses environment variables directly.
 
 ---
 
 ## 🎯 Ready to Ship?
 
 1. Generate keystore ✓
-2. Set 4 GitHub secrets ✓
-3. Build debug locally ✓
-4. Push to main ✓
-5. Create tag for release ✓
+2. Add keystore to .gitignore ✓
+3. Set 4 GitHub secrets ✓
+4. Build debug locally ✓
+5. Push to main ✓
+6. Create tag for release ✓
 
 **Total time: ~15 minutes first time, then instant!**
 
 Need help? Check the workflow logs at:
 https://github.com/katsugtgz/shollu-android/actions
+

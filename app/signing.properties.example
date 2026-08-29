@@ -1,13 +1,28 @@
-# Add your signing credentials here (local, NOT committed)
-# Copy this file and rename to gradle.properties.local
+# ⚠️ SIGNING CREDENTIALS TEMPLATE - DO NOT COMMIT
+# 
+# Copy this file to app/signing.properties for local development ONLY.
+# 
+# NOTE: The CI/CD system does NOT use properties files. Instead, it reads
+# signing credentials directly from environment variables (RELEASE_*):
+#   - RELEASE_STORE_FILE
+#   - RELEASE_KEY_ALIAS  
+#   - RELEASE_KEY_PASSWORD
+#   - RELEASE_STORE_PASSWORD
+#
+# These env vars are exported from GitHub Secrets in the workflow file.
+# For local builds, you can either:
+# 1. Export the same env vars manually in your shell
+# 2. Create app/signing.properties (never commit this file!)
 
 android.useAndroidX=true
 android.enableJetifier=true
 
-# Release Signing - Use keytool to generate:
-# keytool -genkeypair -v -keystore release.keystore -alias shollu-release -keyalg RSA -keysize 2048 -validity 10000
+# Release Signing Configuration
+# Generate keystore first with:
+# keytool -genkeypair -v -keystore app/release.keystore \
+#   -alias shollu-release -keyalg RSA -keysize 2048 -validity 10000
 
 RELEASE_KEY_ALIAS=shollu-release
-RELEASE_STORE_FILE=../release.keystore
+RELEASE_STORE_FILE=app/release.keystore
 RELEASE_KEY_PASSWORD=YOUR_KEY_PASSWORD_HERE
 RELEASE_STORE_PASSWORD=YOUR_STORE_PASSWORD_HERE

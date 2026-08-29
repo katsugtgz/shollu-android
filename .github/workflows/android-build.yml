@@ -40,10 +40,10 @@ jobs:
         echo "=== App Module ==="
         ls -la app/ || true
     
-    # Run tests first
+    # Run tests first (fail build if tests fail)
     - name: Run Tests
       run: ./gradlew test --stacktrace
-      continue-on-error: true
+      continue-on-error: false
     
     # Build Debug APK
     - name: Build Debug APK
@@ -62,6 +62,9 @@ jobs:
     needs: build-and-test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write  # Required for creating GitHub releases
     
     outputs:
       version: ${{ steps.extract_version.outputs.version }}
@@ -86,54 +89,66 @@ jobs:
     - name: Grant execute permission to gradlew
       run: chmod +x ./gradlew
     
-    # Read secrets for signing
-    - name: Create keystore file
+    # Read secrets for signing - export as env vars that Gradle can read
+    - name: Setup signing credentials
       env:
         KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-      run: |
-        if [ -n "$KEYSTORE_BASE64" ]; then
-          echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
-          echo "✅ Keystore created successfully"
-        else
-          echo "⚠️ No keystore provided - will use default debug key"
-        fi
-    
-    - name: Configure signing properties (if available)
-      env:
         SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
         SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
       run: |
-        if [ -n "$SIGNING_KEY_ALIAS" ]; then
-          cat << EOF > gradle.properties.local
-          android.useAndroidX=true
-          android.enableJetifier=true
+        # Create keystore file if secret is provided
+        if [ -n "$KEYSTORE_BASE64" ]; then
+          echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+          echo "✅ Keystore created successfully at app/release.keystore"
+          echo "RELEASE_STORE_FILE=app/release.keystore" >> $GITHUB_ENV
+        else
+          echo "⚠️ No keystore provided - will use default debug key"
+          echo "RELEASE_STORE_FILE=app/release.keystore" >> $GITHUB_ENV
+        fi
         
-          # Signing configuration
-          RELEASE_KEY_ALIAS=$SIGNING_KEY_ALIAS
-          RELEASE_STORE_FILE=app/release.keystore
-          RELEASE_KEY_PASSWORD=$SIGNING_KEY_PASSWORD
-          RELEASE_STORE_PASSWORD=$SIGNING_STORE_PASSWORD
-          EOF
-          echo "📝 Signing properties configured"
+        # Export signing credentials as environment variables
+        if [ -n "$SIGNING_KEY_ALIAS" ]; then
+          echo "RELEASE_KEY_ALIAS=$SIGNING_KEY_ALIAS" >> $GITHUB_ENV
+          echo "🔑 Signer alias configured"
         else
           echo "⚠️ Signing credentials not provided"
-          cat << EOF > gradle.properties.local
-          android.useAndroidX=true
-          android.enableJetifier=true
-          # Using debug signing
-          EOF
         fi
+        
+        if [ -n "$SIGNING_KEY_PASSWORD" ]; then
+          echo "RELEASE_KEY_PASSWORD=$SIGNING_KEY_PASSWORD" >> $GITHUB_ENV
+        fi
+        
+        if [ -n "$SIGNING_STORE_PASSWORD" ]; then
+          echo "RELEASE_STORE_PASSWORD=$SIGNING_STORE_PASSWORD" >> $GITHUB_ENV
+        fi
+        
+        # Pass version information to Gradle
+        echo "RELEASE_VERSION_NAME=${{ steps.extract_version.outputs.version }}" >> $GITHUB_ENV
+        echo "PASSING ENV VARS TO GRADLE"
     
-    # Build Release APK
+    # Build Release APK (Gradle reads RELEASE_* env vars)
     - name: Build Release APK
       run: ./gradlew assembleRelease --stacktrace
       continue-on-error: false
+      env:
+        # These are now available to Gradle build.gradle.kts
+        RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
+        RELEASE_KEY_ALIAS: ${{ env.RELEASE_KEY_ALIAS }}
+        RELEASE_KEY_PASSWORD: ${{ env.RELEASE_KEY_PASSWORD }}
+        RELEASE_STORE_PASSWORD: ${{ env.RELEASE_STORE_PASSWORD }}
+        RELEASE_VERSION_NAME: ${{ steps.extract_version.outputs.version }}
     
     # Build AAB (Android App Bundle for Play Store)
     - name: Build AAB
       run: ./gradlew bundleRelease --stacktrace
       continue-on-error: false
+      env:
+        RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
+        RELEASE_KEY_ALIAS: ${{ env.RELEASE_KEY_ALIAS }}
+        RELEASE_KEY_PASSWORD: ${{ env.RELEASE_KEY_PASSWORD }}
+        RELEASE_STORE_PASSWORD: ${{ env.RELEASE_STORE_PASSWORD }}
+        RELEASE_VERSION_NAME: ${{ steps.extract_version.outputs.version }}
     
     # Upload Release APK
     - name: Upload Release APK
@@ -156,7 +171,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: success()
       with:
-        tag_name: ${{ github.ref }}
+        tag_name: ${{ github.ref_name }}  # Use ref_name, not ref (v... instead of refs/tags/v...)
         name: Shollu Android v${{ steps.extract_version.outputs.version }}
         draft: false
         prerelease: false
