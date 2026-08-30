@@ -180,10 +180,19 @@ fun HomeScreen(
                         },
                         label = action.label,
                         icon = {
-                            Icon(
-                                imageVector = quickActionIcon(action.id),
-                                contentDescription = null
-                            )
+                            // 48dp slot (issue #16): clickableItem has no modifier param, so the
+                            // minimum target is carried by the content — and M3's default
+                            // minimumInteractiveComponentSize additionally expands the touch
+                            // target to >=48dp on the clickable item itself.
+                            Box(
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = quickActionIcon(action.id),
+                                    contentDescription = null
+                                )
+                            }
                         },
                         weight = 1f
                     )

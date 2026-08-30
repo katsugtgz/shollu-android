@@ -116,7 +116,10 @@ class MainActivity : ComponentActivity() {
                             items.forEach { screen ->
                                 val isSelected = currentRoute == screen.route
                                 NavigationBarItem(
-                                    icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                    // Decorative icon: the visible label() supplies the
+                                    // accessible destination name — a contentDescription
+                                    // here would make TalkBack announce the tab twice.
+                                    icon = { Icon(screen.icon, contentDescription = null) },
                                     label = { Text(screen.title, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                                     selected = isSelected,
                                     onClick = {

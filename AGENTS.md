@@ -90,7 +90,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 
 ## UNIQUE STYLES
 
-- Settings mutations always pair: DataStore write + `scheduleNextPrayerAlarms` + widget refresh, on `applicationScope` (survives navigation; not `rememberCoroutineScope`).
+- Settings mutations run on `applicationScope` (survives navigation; not `rememberCoroutineScope`); per-control side effects follow the explicit matrix in `ui/screens/settings/SettingsActions.kt` (write / reschedule / widget-refresh vary per control — hisab, ihtiyat, and ThemeMode refresh the widget; Hijri adjustment and max vibration are write-only).
 - Tests: strict `test<CamelCase>` prefix; regression tests named after the bug; hardening rounds as `*Round2Test`; adversarial suites (`AdversarialStressTest`, `AlarmPipelineHardeningTest`).
 - `rememberTickMillis(interval)` used as a remember-key so wall-clock reads don't freeze at first composition. Two tick idioms coexist: `rememberTickMillis` (30-60s remember-key invalidation) vs 1s `LaunchedEffect` loop (hero countdown).
 - Request-code invariants are proven by tests (even=main, odd=pre-prayer, disjoint 100-yr space) — don't change the formula casually.
