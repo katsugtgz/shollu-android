@@ -51,9 +51,11 @@ internal fun rememberAnimatorDurationScale(): Float {
                 scale = readAnimatorDurationScale(context)
             }
         }
-        // Catch changes between the remember{} init and this effect attaching.
-        scale = readAnimatorDurationScale(context)
+        // Register BEFORE the initial read: a change landing between read and
+        // register would otherwise be missed until the next setting change.
+        // (Duplicate read is impossible to miss, and idempotent if it overlaps.)
         context.contentResolver.registerContentObserver(uri, false, observer)
+        scale = readAnimatorDurationScale(context)
         onDispose { context.contentResolver.unregisterContentObserver(observer) }
     }
     return scale
