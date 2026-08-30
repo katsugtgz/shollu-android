@@ -14,13 +14,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.receiver.AlarmTime
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -69,6 +68,12 @@ fun NextPrayerHeroCard(
     val countdownText = if (target != null) {
         String.format("%02d : %02d : %02d", hours, minutes, seconds)
     } else "-- : -- : --"
+    // Expressive restyle (#16): the hero reads colorScheme roles — primary gradient
+    // (primary darkened toward black) with onPrimary text and tertiary accents — so the
+    // card follows the active ThemeMode instead of hardcoded emerald.
+    val colorScheme = MaterialTheme.colorScheme
+    val heroGradientStart = colorScheme.primary
+    val heroGradientEnd = lerp(colorScheme.primary, Color.Black, 0.45f)
     // After today's last valid major the target is TOMORROW's slot — say so, or the name and
     // time read as today's prayer.
     val targetIsTomorrow = target != null && target.third.toLocalDate() != cityNow.toLocalDate()
@@ -90,8 +95,8 @@ fun NextPrayerHeroCard(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF0D6A53),
-                            Color(0xFF074838)
+                            heroGradientStart,
+                            heroGradientEnd
                         )
                     )
                 )
@@ -106,7 +111,7 @@ fun NextPrayerHeroCard(
                 ) {
                     Surface(
                         onClick = onLocationClick,
-                        color = Color(0x33FFFFFF),
+                        color = colorScheme.onPrimary.copy(alpha = 0.2f),
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Row(
@@ -116,14 +121,14 @@ fun NextPrayerHeroCard(
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = null,
-                                tint = EmeraldGold,
+                                tint = colorScheme.tertiary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = cityName,
-                                color = Color.White,
-                                fontSize = 12.sp,
+                                color = colorScheme.onPrimary,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -131,8 +136,8 @@ fun NextPrayerHeroCard(
 
                     Text(
                         text = hijriDateFormatted,
-                        color = EmeraldGold,
-                        fontSize = 12.sp,
+                        color = colorScheme.tertiary,
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -148,21 +153,21 @@ fun NextPrayerHeroCard(
                     Column {
                         Text(
                             text = "Menuju Waktu",
-                            color = Color(0xFFE0E0E0),
-                            fontSize = 13.sp
+                            color = colorScheme.onPrimary.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.bodySmall
                         )
                         Text(
                             text = prayerName,
-                            color = Color.White,
-                            fontSize = 28.sp,
+                            color = colorScheme.onPrimary,
+                            style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
                     Text(
                         text = prayerTimeText,
-                        color = EmeraldGold,
-                        fontSize = 34.sp,
+                        color = colorScheme.tertiary,
+                        style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.ExtraBold
                     )
                 }
@@ -173,7 +178,7 @@ fun NextPrayerHeroCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0x22000000), RoundedCornerShape(14.dp))
+                        .background(Color.Black.copy(alpha = 0.13f), RoundedCornerShape(16.dp))
                         .padding(vertical = 10.dp, horizontal = 14.dp)
                 ) {
                     Row(
@@ -184,14 +189,14 @@ fun NextPrayerHeroCard(
                         Icon(
                             imageVector = Icons.Default.Schedule,
                             contentDescription = null,
-                            tint = EmeraldGold,
+                            tint = colorScheme.tertiary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Sisa Waktu: $countdownText",
-                            color = Color.White,
-                            fontSize = 15.sp,
+                            color = colorScheme.onPrimary,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )

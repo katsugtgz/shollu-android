@@ -10,14 +10,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.PrayerType
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.icon
 
 @Composable
@@ -29,11 +25,14 @@ fun PrayerCard(
 ) {
     val prayerName = prayerType.displayName
     val icon: ImageVector = prayerType.icon
+    // Expressive restyle (#16): the highlighted "next" row uses primary/tertiary roles so the
+    // highlight follows the active ThemeMode instead of hardcoded emerald/gold.
+    val colorScheme = MaterialTheme.colorScheme
 
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isNext) EmeraldPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            containerColor = if (isNext) colorScheme.primary else colorScheme.surfaceVariant.copy(alpha = 0.45f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isNext) 4.dp else 0.dp),
         modifier = modifier
@@ -53,14 +52,14 @@ fun PrayerCard(
                     modifier = Modifier
                         .size(38.dp)
                         .background(
-                            if (isNext) EmeraldGold.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            RoundedCornerShape(10.dp)
+                            if (isNext) colorScheme.tertiary.copy(alpha = 0.2f) else colorScheme.primary.copy(alpha = 0.1f),
+                            RoundedCornerShape(12.dp)
                         )
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = if (isNext) EmeraldGold else MaterialTheme.colorScheme.primary,
+                        tint = if (isNext) colorScheme.tertiary else colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -71,14 +70,14 @@ fun PrayerCard(
                     Text(
                         text = prayerName,
                         fontWeight = if (isNext) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 16.sp,
-                        color = if (isNext) Color.White else MaterialTheme.colorScheme.onSurface
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isNext) colorScheme.onPrimary else colorScheme.onSurface
                     )
                     if (isNext) {
                         Text(
                             text = "Akan Datang",
-                            fontSize = 11.sp,
-                            color = EmeraldGold,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colorScheme.tertiary,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -89,15 +88,15 @@ fun PrayerCard(
                 Text(
                     text = timeFormatted,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = if (isNext) EmeraldGold else MaterialTheme.colorScheme.onSurface
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isNext) colorScheme.tertiary else colorScheme.onSurface
                 )
                 if (isNext) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = "Upcoming",
-                        tint = EmeraldGold,
+                        tint = colorScheme.tertiary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
