@@ -53,12 +53,13 @@ fun CalendarScreen(
     val cityToday = remember(dayTick, selectedCity.timezone) {
         AlarmTime.cityWallClockNow(timezoneHours = selectedCity.timezone).toLocalDate()
     }
-    // Re-follow the city frame when today's MONTH jumps (city change across a date line, or
-    // the 1st at midnight): a month-less key would keep the browsed month frozen while the
-    // "today" highlight silently leaves the visible month. Within-month date changes and
-    // manual browsing are unaffected.
-    var currentYearMonth by remember(YearMonth.from(cityToday)) {
-        mutableStateOf(YearMonth.from(cityToday))
+    // Follow the city frame while the user has NOT browsed away: month rollovers and city
+    // jumps then keep the "today" highlight visible. Once the user navigates manually, their
+    // chosen month is respected — the ordinary 1st-of-month rollover must not yank the view.
+    var currentYearMonth by remember { mutableStateOf(YearMonth.from(cityToday)) }
+    var browsedAway by remember { mutableStateOf(false) }
+    LaunchedEffect(YearMonth.from(cityToday)) {
+        if (!browsedAway) currentYearMonth = YearMonth.from(cityToday)
     }
 
     val monthlySchedule = remember(currentYearMonth, selectedCity, calculationMethod, asrJuristic, ihtiyatMinutes, customOffsets) {
@@ -107,8 +108,8 @@ fun CalendarScreen(
                 city = selectedCity,
                 locale = appLocale,
                 today = cityToday,
-                onPreviousMonth = { currentYearMonth = currentYearMonth.minusMonths(1) },
-                onNextMonth = { currentYearMonth = currentYearMonth.plusMonths(1) },
+                onPreviousMonth = { browsedAway = true; currentYearMonth = currentYearMonth.minusMonths(1) },
+                onNextMonth = { browsedAway = true; currentYearMonth = currentYearMonth.plusMonths(1) },
                 onExport = { exportSchedule(context, selectedCity, currentYearMonth, monthlySchedule, appLocale) }
             )
             1 -> DateConverterView(

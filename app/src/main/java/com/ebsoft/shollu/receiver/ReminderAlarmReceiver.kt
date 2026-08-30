@@ -86,9 +86,13 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 val reminder = db.reminderDao().getReminderById(reminderId)
                 if (reminder != null && reminder.isEnabled) {
                     if (reminder.daysOfWeek.isOnce) {
-                        db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
+                        // Locked (with the batch rescheduler) so a concurrent city-change
+                        // reschedule cannot re-arm this one-shot after we disable it.
+                        ReminderAlarmScheduler.disableFiredOnceReminder(context, reminder)
                     } else {
-                        // Recur in the CITY's frame — the same offset the reminder was armed with.
+                        // Recur in the CURRENT city's frame: the offset is re-read at fire time,
+                        // so reminders follow city changes — the same frame the Scheduler
+                        // screen labels the times with.
                         val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
                         ReminderAlarmScheduler.scheduleReminder(context, reminder, timezoneHours)
                     }

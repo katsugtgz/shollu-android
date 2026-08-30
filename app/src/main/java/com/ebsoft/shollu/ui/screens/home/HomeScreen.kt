@@ -53,24 +53,28 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    // ONE per-second epoch reading feeds BOTH surfaces — the hero's countdown AND the list
-    // highlight. A prayer that has passed flips both within 1s: deriving the list from a
-    // slower 30s tick let the hero and the list disagree about "next" for up to 30s.
-    var deviceEpochMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    // ONE per-second epoch clock, read through derivedStateOf so the per-second writes only
+    // recompose what actually changes: the hero's countdown (reads the clock directly), the
+    // list highlight (only when the next prayer FLIPS, at prayer boundaries), and the city
+    // date (only at city-midnight). Reading the raw state in the body instead would re-run
+    // the whole screen — every PrayerCard — once per second.
+    val clock = remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
-            deviceEpochMillis = System.currentTimeMillis()
+            clock.value = System.currentTimeMillis()
             delay(1000L)
         }
     }
 
     // Presentation "now"/"today" in the CITY's frame of reference (same helper the alarm
     // pipeline uses) — never the device zone, so a traveller's Home shows the city's slot
-    // and the city's calendar date. Refreshing the CITY date per second also re-keys
-    // [scheduleKey] at city-midnight instantly, so yesterday's schedule is never displayed
-    // under the new date.
-    val cityNow = AlarmTime.cityWallClockNow(deviceEpochMillis, selectedCity.timezone)
-    val cityToday = cityNow.toLocalDate()
+    // and the city's calendar date. The date re-keys [scheduleKey] at city-midnight
+    // instantly, so yesterday's schedule is never displayed under the new date.
+    val cityToday by remember(selectedCity.timezone) {
+        derivedStateOf {
+            AlarmTime.cityWallClockNow(clock.value, selectedCity.timezone).toLocalDate()
+        }
+    }
     val appLocale = rememberAppLocale()
     val hijriDate = remember(cityToday, hijriAdjustment) {
         HijriCalendarHelper.gregorianToHijri(cityToday, hijriAdjustment)
@@ -116,12 +120,20 @@ fun HomeScreen(
         onScheduleComputed(entry)
     }
 
-    // Polar-aware next target for the list highlight (per-second tick): invalid Subuh/Isya
-    // placeholders are never next; after the last valid major today the target is
-    // tomorrow's first valid major (its date is TOMORROW's). Hero and list read the SAME
-    // per-second now, so they can never disagree about which prayer is next.
-    val nextPrayerTarget = citySchedule?.let { (today, tomorrow) ->
-        today.getNextPrayerTarget(cityNow, tomorrow)
+    // Polar-aware next target for the list highlight: invalid Subuh/Isya placeholders are
+    // never next; after the last valid major today the target is tomorrow's first valid
+    // major (its date is TOMORROW's). derivedStateOf keeps hero and list on the SAME clock
+    // (no disagreement about "next") while only notifying at prayer boundaries — the Triple
+    // is structurally equal every second within a slot.
+    val nextTarget by remember(citySchedule, selectedCity.timezone) {
+        derivedStateOf {
+            citySchedule?.let { (today, tomorrow) ->
+                today.getNextPrayerTarget(
+                    AlarmTime.cityWallClockNow(clock.value, selectedCity.timezone),
+                    tomorrow
+                )
+            }
+        }
     }
 
     LazyColumn(
@@ -137,7 +149,7 @@ fun HomeScreen(
                 timezoneHours = selectedCity.timezone,
                 cityName = selectedCity.name,
                 hijriDateFormatted = hijriDate.formatDisplay(),
-                deviceEpochMillis = deviceEpochMillis,
+                clockState = clock,
                 onLocationClick = onNavigateToLocationPicker
             )
             Spacer(modifier = Modifier.height(16.dp))
@@ -221,7 +233,7 @@ fun HomeScreen(
                 // tomorrow, the target's date is cityToday.plusDays(1) so no card matches — a
                 // type-only match would flag today's already-passed same-type prayer
                 // "Akan Datang".
-                val isNext = nextPrayerTarget?.let { (nextType, _, targetDateTime) ->
+                val isNext = nextTarget?.let { (nextType, _, targetDateTime) ->
                     type == nextType && targetDateTime.toLocalDate() == cityToday
                 } == true
                 PrayerCard(

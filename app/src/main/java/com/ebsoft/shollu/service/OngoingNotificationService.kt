@@ -124,7 +124,7 @@ class OngoingNotificationService : Service() {
                     // After today's last valid major the target is TOMORROW's slot — label it,
                     // or the countdown reads as today's already-passed prayer.
                     val targetIsTomorrow = targetDateTime.toLocalDate() != now.toLocalDate()
-                    val displayNameWithDay = if (targetIsTomorrow) "$prayerDisplayName Besok" else prayerDisplayName
+                    val displayNameWithDay = if (targetIsTomorrow) "$prayerDisplayName (Besok)" else prayerDisplayName
 
                     updateNotification(
                         title = "Menuju $displayNameWithDay ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",

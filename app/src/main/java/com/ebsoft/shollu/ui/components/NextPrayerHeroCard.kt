@@ -29,15 +29,17 @@ fun NextPrayerHeroCard(
     timezoneHours: Double,
     cityName: String,
     hijriDateFormatted: String,
-    deviceEpochMillis: Long,
+    clockState: State<Long>,
     onLocationClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Per-second epoch reading owned by the CALLER (shared with the schedule list, so hero
-    // and list flip to the next prayer on the same beat). Each reading re-derives the
-    // polar-aware target in the CITY's frame (AlarmTime.cityWallClockNow is a pure function
-    // of epoch + offset), so the countdown rolls over to the next slot within 1s of a prayer
-    // passing and stays correct when the device zone differs from the city.
+    // Per-second epoch clock owned by the CALLER (shared with the schedule list, so hero and
+    // list flip to the next prayer on the same beat). Reading the State here scopes the
+    // per-second recomposition to this card; each reading re-derives the polar-aware target
+    // in the CITY's frame (AlarmTime.cityWallClockNow is a pure function of epoch + offset),
+    // so the countdown rolls over within 1s of a prayer passing and stays correct when the
+    // device zone differs from the city.
+    val deviceEpochMillis = clockState.value
     val cityNow = AlarmTime.cityWallClockNow(deviceEpochMillis, timezoneHours)
 
     // Boundary guard: only a pair computed for THIS city date and its following date may be
