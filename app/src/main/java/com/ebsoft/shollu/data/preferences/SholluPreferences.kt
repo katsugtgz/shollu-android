@@ -196,7 +196,8 @@ class SholluPreferences(private val context: Context) {
     suspend fun incrementIhtiyatMinutes(delta: Int) {
         context.dataStore.edit { prefs ->
             val current = prefs[IHTIYAT_MINUTES] ?: 2
-            prefs[IHTIYAT_MINUTES] = (current + delta).coerceIn(0, 10)
+            // Long sum before clamping: an overflowing delta must clamp, not wrap.
+            prefs[IHTIYAT_MINUTES] = (current.toLong() + delta).coerceIn(0, 10).toInt()
         }
     }
 
@@ -204,7 +205,7 @@ class SholluPreferences(private val context: Context) {
     suspend fun incrementHijriAdjustment(delta: Int) {
         context.dataStore.edit { prefs ->
             val current = prefs[HIJRI_ADJUSTMENT] ?: 0
-            prefs[HIJRI_ADJUSTMENT] = (current + delta).coerceIn(-2, 2)
+            prefs[HIJRI_ADJUSTMENT] = (current.toLong() + delta).coerceIn(-2, 2).toInt()
         }
     }
 
