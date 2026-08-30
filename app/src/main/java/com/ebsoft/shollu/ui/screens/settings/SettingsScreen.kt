@@ -32,6 +32,7 @@ import com.ebsoft.shollu.service.OngoingNotificationService
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.widget.updateSholluWidgets
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -93,6 +94,8 @@ fun SettingsScreen(
             },
             rescheduleAlarms = { AlarmScheduler.scheduleNextPrayerAlarms(context) },
             refreshWidgets = { updateSholluWidgets(context) },
+            readIhtiyatMinutes = { preferences.ihtiyatMinutes.first() },
+            readHijriAdjustment = { preferences.hijriAdjustment.first() },
             startOngoingService = { enabled ->
                 val intent = Intent(context, OngoingNotificationService::class.java).apply {
                     action = if (enabled) {
@@ -194,10 +197,10 @@ fun SettingsScreen(
                     subtitle = "Standar Kemenag RI: +2 menit",
                     valueText = "+$ihtiyatMinutes m",
                     onDecrement = {
-                        launchSetting { actions.changeIhtiyat(ihtiyatMinutes, delta = -1) }
+                        launchSetting { actions.changeIhtiyat(delta = -1) }
                     },
                     onIncrement = {
-                        launchSetting { actions.changeIhtiyat(ihtiyatMinutes, delta = +1) }
+                        launchSetting { actions.changeIhtiyat(delta = +1) }
                     }
                 )
 
@@ -209,10 +212,10 @@ fun SettingsScreen(
                     subtitle = "Penyesuaian hisab rukyatul hilal",
                     valueText = "$hijriAdjustment hr",
                     onDecrement = {
-                        launchSetting { actions.changeHijriAdjustment(hijriAdjustment, delta = -1) }
+                        launchSetting { actions.changeHijriAdjustment(delta = -1) }
                     },
                     onIncrement = {
-                        launchSetting { actions.changeHijriAdjustment(hijriAdjustment, delta = +1) }
+                        launchSetting { actions.changeHijriAdjustment(delta = +1) }
                     }
                 )
             }

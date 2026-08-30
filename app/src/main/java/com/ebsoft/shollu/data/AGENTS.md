@@ -42,5 +42,5 @@ Room DB + DataStore prefs + repositories (prayer calc cache, city seed) + pure d
 - DB is version 1, `fallbackToDestructiveMigration()` (no migrations written; a schema bump wipes user reminders — prefs survive in DataStore).
 - `defaultPresets()` seeds 4 presets; `PRESET_AYYAMUL_BIDH` exists in the enum but is never auto-seeded.
 - Tahajjud preset ships `isEnabled = false`; the other three are enabled and must be seeded before `ReminderAlarmScheduler` arms alarms.
-- `PrayerTimes.getNextPrayerTarget(now, tomorrow)` needs the real next-day instance for correct post-Isya dawn time; `getNextPrayer(now)` (LocalTime-only) treats tomorrow's Subuh as today's.
+- `PrayerTimes.getNextPrayerTarget(now, tomorrow)` is the single next-prayer selector (polar-aware). Pass the real next-day instance for the correct post-Isya rollover time — omitting it reuses today's schedule for tomorrow's dawn.
 - `CalculationMethod`: 10 methods; UMM_AL_QURA + QATAR use `ishaIntervalMin=90` with `ishaAngle=0`; `defaultIhtiyatMin` is per-method (KEMENAG_RI 2, MUIS 1, rest 0).

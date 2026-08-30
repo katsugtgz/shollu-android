@@ -50,7 +50,7 @@ private val NavyTile = WidgetPalette(
 private val AmoledTile = WidgetPalette(
     background = Color(0xFF000000),   // AmoledBackground
     accent = Color(0xFFFFD54F),       // AmoledAccentGold
-    onBackground = Color(0xFFE0E0E0),
+    onBackground = Color(0xFFFFFFFF), // white: keeps the 3-level hierarchy vs secondaryText
     secondaryText = Color(0xFFE0E0E0),
     mutedText = Color(0xFFB0BEC5)
 )

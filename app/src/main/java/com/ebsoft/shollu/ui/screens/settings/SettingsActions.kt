@@ -2,6 +2,8 @@ package com.ebsoft.shollu.ui.screens.settings
 
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Narrow write seam over [com.ebsoft.shollu.data.preferences.SholluPreferences]: exactly the
@@ -53,7 +55,14 @@ class SettingsActions(
     private val setDropzoneRunning: (start: Boolean) -> Unit,
     private val hasOverlayPermission: () -> Boolean,
     private val requestOverlayPermission: () -> Unit,
+    /** Latest PERSISTED value for the ihtiyat stepper — never the composition snapshot. */
+    private val readIhtiyatMinutes: suspend () -> Int,
+    /** Latest PERSISTED value for the Hijri stepper — never the composition snapshot. */
+    private val readHijriAdjustment: suspend () -> Int,
 ) {
+
+    /** Steppers read-modify-write the persisted value; the mutex serializes rapid taps. */
+    private val stepperMutex = Mutex()
 
     /** Metode Hisab: write -> reschedule -> refresh widget. */
     suspend fun setCalculationMethod(method: CalculationMethod) {
@@ -62,17 +71,21 @@ class SettingsActions(
         refreshWidgets()
     }
 
-    /** Ihtiyat stepper, clamped to 0..10: write -> reschedule -> refresh widget. */
-    suspend fun changeIhtiyat(currentMinutes: Int, delta: Int) {
-        val next = (currentMinutes + delta).coerceIn(MIN_IHTIYAT, MAX_IHTIYAT)
+    /**
+     * Ihtiyat stepper, clamped to 0..10: read persisted -> write -> reschedule -> refresh widget.
+     * Computes from the persisted value (not the caller's snapshot) under a mutex, so taps
+     * landing before the preference Flow re-emits still accumulate instead of collapsing.
+     */
+    suspend fun changeIhtiyat(delta: Int) = stepperMutex.withLock {
+        val next = (readIhtiyatMinutes() + delta).coerceIn(MIN_IHTIYAT, MAX_IHTIYAT)
         mutations.updateIhtiyatMinutes(next)
         rescheduleAlarms()
         refreshWidgets()
     }
 
-    /** Hijri adjustment stepper, clamped to -2..2: write ONLY. */
-    suspend fun changeHijriAdjustment(currentDays: Int, delta: Int) {
-        val next = (currentDays + delta).coerceIn(MIN_HIJRI, MAX_HIJRI)
+    /** Hijri adjustment stepper, clamped to -2..2: persisted RMW, write ONLY. */
+    suspend fun changeHijriAdjustment(delta: Int) = stepperMutex.withLock {
+        val next = (readHijriAdjustment() + delta).coerceIn(MIN_HIJRI, MAX_HIJRI)
         mutations.updateHijriAdjustment(next)
     }
 
@@ -108,11 +121,12 @@ class SettingsActions(
     }
 
     /**
-     * Floating dropzone toggle: without the overlay permission, request it and touch nothing
-     * else; with it, start/stop the service. No DataStore write.
+     * Floating dropzone toggle: stopping never needs the overlay permission (a revoked
+     * permission must not trap the service on); starting without it requests the permission
+     * and touches nothing else. No DataStore write.
      */
     suspend fun toggleDropzone(start: Boolean) {
-        if (hasOverlayPermission()) {
+        if (!start || hasOverlayPermission()) {
             setDropzoneRunning(start)
         } else {
             requestOverlayPermission()

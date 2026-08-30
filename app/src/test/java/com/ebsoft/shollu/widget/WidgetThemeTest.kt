@@ -87,7 +87,7 @@ class WidgetThemeTest {
             dark,
             background = Color(0xFF000000),   // AmoledBackground
             accent = Color(0xFFFFD54F),       // AmoledAccentGold
-            onBackground = Color(0xFFE0E0E0),
+            onBackground = Color(0xFFFFFFFF), // white: distinct from secondaryText
             secondaryText = Color(0xFFE0E0E0),
             mutedText = Color(0xFFB0BEC5)
         )

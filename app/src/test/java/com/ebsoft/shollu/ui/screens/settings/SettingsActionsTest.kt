@@ -87,7 +87,11 @@ class SettingsActionsTest {
             startVibrationTest = { recorder.service("vibrationTest") },
             setDropzoneRunning = { start -> recorder.service("dropzone=$start") },
             requestOverlayPermission = { recorder.permission("overlay") },
-            hasOverlayPermission = { overlayGranted }
+            hasOverlayPermission = { overlayGranted },
+            // Steppers read the PERSISTED value (DataStore semantics), defaulting like the
+            // screen's initial collect: ihtiyat 2 (Kemenag), hijri 0.
+            readIhtiyatMinutes = { prefs.ihtiyatMinutes ?: 2 },
+            readHijriAdjustment = { prefs.hijriAdjustment ?: 0 }
         )
     }
 
@@ -106,7 +110,8 @@ class SettingsActionsTest {
     @Test
     fun ihtiyatIncrementWritesClampedValueAndReschedulesAndRefreshesWidget() = runTest {
         val h = Harness()
-        h.actions.changeIhtiyat(7, delta = +1)
+        h.prefs.ihtiyatMinutes = 7
+        h.actions.changeIhtiyat(delta = +1)
         assertEquals(8, h.prefs.ihtiyatMinutes)
         assertEquals(listOf("write:ihtiyat=8", "reschedule", "widget"), h.recorder.events)
     }
@@ -114,15 +119,33 @@ class SettingsActionsTest {
     @Test
     fun ihtiyatClampsAtZero() = runTest {
         val h = Harness()
-        h.actions.changeIhtiyat(0, delta = -1)
+        h.prefs.ihtiyatMinutes = 0
+        h.actions.changeIhtiyat(delta = -1)
         assertEquals(0, h.prefs.ihtiyatMinutes)
     }
 
     @Test
     fun ihtiyatClampsAtTen() = runTest {
         val h = Harness()
-        h.actions.changeIhtiyat(10, delta = +1)
+        h.prefs.ihtiyatMinutes = 10
+        h.actions.changeIhtiyat(delta = +1)
         assertEquals(10, h.prefs.ihtiyatMinutes)
+    }
+
+    @Test
+    fun rapidTapsAccumulateBecauseEachTapRereadsThePersistedValue() = runTest {
+        // Regression (cubic round 1): taps landing before the preference Flow re-emits must
+        // still accumulate — each call re-reads the persisted value instead of trusting a
+        // stale composition snapshot that would collapse -1 -1 into a single -1.
+        val h = Harness()
+        h.prefs.ihtiyatMinutes = 5
+        h.actions.changeIhtiyat(delta = -1)
+        h.actions.changeIhtiyat(delta = -1)
+        assertEquals(3, h.prefs.ihtiyatMinutes)
+        assertEquals(
+            listOf("write:ihtiyat=4", "reschedule", "widget", "write:ihtiyat=3", "reschedule", "widget"),
+            h.recorder.events
+        )
     }
 
     // ---- Hijri adjustment stepper: clamped -2..2, write ONLY ----
@@ -130,7 +153,8 @@ class SettingsActionsTest {
     @Test
     fun hijriAdjustmentWritesOnly_noRescheduleNoWidget() = runTest {
         val h = Harness()
-        h.actions.changeHijriAdjustment(0, delta = +1)
+        h.prefs.hijriAdjustment = 0
+        h.actions.changeHijriAdjustment(delta = +1)
         assertEquals(1, h.prefs.hijriAdjustment)
         assertEquals(listOf("write:hijri=1"), h.recorder.events)
     }
@@ -138,9 +162,11 @@ class SettingsActionsTest {
     @Test
     fun hijriAdjustmentClampsAtMinusTwoAndTwo() = runTest {
         val h = Harness()
-        h.actions.changeHijriAdjustment(-2, delta = -1)
+        h.prefs.hijriAdjustment = -2
+        h.actions.changeHijriAdjustment(delta = -1)
         assertEquals(-2, h.prefs.hijriAdjustment)
-        h.actions.changeHijriAdjustment(2, delta = +1)
+        h.prefs.hijriAdjustment = 2
+        h.actions.changeHijriAdjustment(delta = +1)
         assertEquals(2, h.prefs.hijriAdjustment)
     }
 
@@ -212,6 +238,16 @@ class SettingsActionsTest {
         h.overlayGranted = false
         h.actions.toggleDropzone(start = true)
         assertEquals(listOf("permission:overlay"), h.recorder.events)
+    }
+
+    @Test
+    fun dropzoneStopNeverNeedsOverlayPermission() = runTest {
+        // Regression (cubic round 1): a permission revoked while the dropzone runs must not
+        // trap the service on — stopping is always allowed.
+        val h = Harness()
+        h.overlayGranted = false
+        h.actions.toggleDropzone(start = false)
+        assertEquals(listOf("service:dropzone=false"), h.recorder.events)
     }
 
     @Test

@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-19 JVM-only suites, 131 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
+27 JVM-only suites, 186 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
 
 ## WHERE TO LOOK
 
@@ -10,7 +10,7 @@
 |---|---|
 | Fake-clock / virtual-time pattern | `DatePulseFlowTest.kt` (`FakeClock(var dateTime): AppClock`, `runTest` + `advanceTimeBy`) |
 | Inline repo fakes + cache identity proof | `RepositoryAndSeamsTest.kt` (`object : IPrayerRepository` w/ in-memory `mutableMapOf`, `assertSame`) |
-| Alarm pipeline regressions (518 ln, largest file in repo) | `AlarmPipelineHardeningTest.kt` |
+| Alarm pipeline regressions (570 ln, largest file in repo) | `AlarmPipelineHardeningTest.kt` |
 | Request-code invariants (zero-collision, disjoint, odd pre-codes) | `LifecycleAdversarialTest.kt`, `receiver/AlarmSchedulerRound2Test.kt` |
 | Astronomical stress (polar/leap/equinox/Hijri 100-yr/Kaaba antipodal) | `AdversarialStressTest.kt` (numbered `testVector1..5`) |
 | Room (only converters + seed plan) | `DataAndLocationTest.kt`, `data/db/SeedPlanRound2Test.kt` |
@@ -24,7 +24,7 @@
 - Assertion messages state the invariant, not the values: `"Cached result should return the identical instance"`, `"pre code must be odd"`, `"Real threads must not interleave inside the scheduling lock"`.
 - Fakes are minimal inline `object :` impls with in-memory maps; identity/caching proven with `assertSame`, not `assertEquals`.
 - Domain data hardcodes 2026 dates and Indonesian names (`Subuh`, `Imsak`, `Terbit`, `Dhuha`); all 8 `PrayerType`s incl. non-major (`isMajorPrayer=false`) appear in expectations.
-- `AlarmPipelineHardeningTest.testSchedulingLockHeldAcrossRealThreads` uses `Executors.newFixedThreadPool(4)` + real `Thread.sleep` inside `runBlocking` — the one place real OS threads are allowed.
+- `AlarmPipelineHardeningTest.testSchedulingLockSerializesRealOsThreads` uses `Executors.newFixedThreadPool(4)` + real `Thread.sleep` inside `runBlocking` — the one place real OS threads are allowed.
 - Request-code proofs to keep green when touching `AlarmScheduler`/`AlarmTime`: full-year zero-collision across leap years and centuries, reminder codes disjoint from prayer codes, pre-prayer cancel codes odd + distinct + both codes of every window slot cancelled (no silent skip).
 
 ## ANTI-PATTERNS

@@ -25,14 +25,16 @@ fun PrayerCard(
 ) {
     val prayerName = prayerType.displayName
     val icon: ImageVector = prayerType.icon
-    // Expressive restyle (#16): the highlighted "next" row uses primary/tertiary roles so the
-    // highlight follows the active ThemeMode instead of hardcoded emerald/gold.
+    // Expressive restyle (#16): the highlighted "next" row uses the primaryContainer/
+    // onPrimaryContainer pairing so the highlight follows the active ThemeMode AND keeps
+    // M3's guaranteed container contrast in both light and dark schemes (primary in the
+    // dark Emerald scheme is a light green that gold/tertiary content cannot sit on).
     val colorScheme = MaterialTheme.colorScheme
 
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isNext) colorScheme.primary else colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            containerColor = if (isNext) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.45f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isNext) 4.dp else 0.dp),
         modifier = modifier
@@ -52,14 +54,14 @@ fun PrayerCard(
                     modifier = Modifier
                         .size(38.dp)
                         .background(
-                            if (isNext) colorScheme.tertiary.copy(alpha = 0.2f) else colorScheme.primary.copy(alpha = 0.1f),
+                            if (isNext) colorScheme.onPrimaryContainer.copy(alpha = 0.12f) else colorScheme.primary.copy(alpha = 0.1f),
                             RoundedCornerShape(12.dp)
                         )
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = if (isNext) colorScheme.tertiary else colorScheme.primary,
+                        tint = if (isNext) colorScheme.onPrimaryContainer else colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -71,13 +73,13 @@ fun PrayerCard(
                         text = prayerName,
                         fontWeight = if (isNext) FontWeight.Bold else FontWeight.Medium,
                         style = MaterialTheme.typography.titleMedium,
-                        color = if (isNext) colorScheme.onPrimary else colorScheme.onSurface
+                        color = if (isNext) colorScheme.onPrimaryContainer else colorScheme.onSurface
                     )
                     if (isNext) {
                         Text(
                             text = "Akan Datang",
                             style = MaterialTheme.typography.labelSmall,
-                            color = colorScheme.tertiary,
+                            color = colorScheme.onPrimaryContainer,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -89,14 +91,14 @@ fun PrayerCard(
                     text = timeFormatted,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (isNext) colorScheme.tertiary else colorScheme.onSurface
+                    color = if (isNext) colorScheme.onPrimaryContainer else colorScheme.onSurface
                 )
                 if (isNext) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = "Upcoming",
-                        tint = colorScheme.tertiary,
+                        tint = colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(16.dp)
                     )
                 }

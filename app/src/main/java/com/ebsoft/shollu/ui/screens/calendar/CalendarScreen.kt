@@ -84,6 +84,9 @@ fun CalendarScreen(
         ) {
             CalendarMode.entries.forEachIndexed { index, mode ->
                 SegmentedButton(
+                    // Equal-weight segments: intrinsic-width labels can overflow the row on
+                    // narrow phones, clipping the last mode out of reach.
+                    modifier = Modifier.weight(1f),
                     selected = modeSelector.selected == mode,
                     onClick = { modeSelector.select(mode) },
                     shape = SegmentedButtonDefaults.itemShape(
@@ -299,7 +302,7 @@ private fun DateConverterView(selectedCity: City, hijriAdjustment: Int, locale: 
                             text = hijriResult.formatDisplay(),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }

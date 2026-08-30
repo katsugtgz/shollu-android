@@ -49,5 +49,5 @@ Compose presentation layer. MainActivity = single state hub; screens are dumb pa
 
 - `FullscreenAlarmActivity` is standalone (outside nav graph, no Scaffold): `setShowWhenLocked` + `setTurnScreenOn` + `requestDismissKeyguard` (pre-O_MR1 window flags). Snooze = `AlarmScheduler.snoozeAlarm()` (5 min), then stop `VibrationAlarmService` by intent action and `finish()`.
 - Qibla shows static bearing card when no sensor exists — screen stays useful, not error-only.
-- Home falls back to `SUBUH 04:30` placeholder while `prayerTimes == null` (initial flow emission).
+- `NextPrayerHeroCard` stays in an honest loading state while the dated schedule is null: "Memuat jadwal…" name, `--:--` time, `-- : -- : --` countdown (no hardcoded placeholder).
 - `HomeScreen` imports `FloatingDropzoneService` but never uses it — leftover, ignore.

@@ -222,7 +222,12 @@ fun FullscreenAlarmScreen(
             // Action Buttons
             Button(
                 onClick = onStopVibration,
-                colors = ButtonDefaults.buttonColors(containerColor = accent),
+                // onTertiary pairing: hardcoded black content loses contrast on light
+                // tertiary containers (e.g. Dynamic light palettes).
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = accent,
+                    contentColor = MaterialTheme.colorScheme.onTertiary
+                ),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -230,13 +235,11 @@ fun FullscreenAlarmScreen(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.VolumeOff,
-                    contentDescription = null,
-                    tint = Color.Black
+                    contentDescription = null
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Hentikan Getar & Tutup",
-                    color = Color.Black,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

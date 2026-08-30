@@ -25,7 +25,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
         │   ├── service/         # foreground services (FOREGROUND_SERVICE_TYPE_SPECIAL_USE): OngoingNotification, VibrationAlarm (45s auto-stop, 60s wakelock cap), FloatingDropzone
         │   ├── widget/          # SholluAppWidget.kt (Glance): self-contained, builds own prefs+repo; updateSholluWidgets() called from app/receiver
         │   └── ui/              # Compose-only UI → see ui/AGENTS.md
-        ├── main/res/raw/cities.json  # 64-city seed, loaded by CityRepository (Gson)
+        ├── main/res/raw/cities.json  # 63-city seed, loaded by CityRepository (Gson)
         └── test/java/com/ebsoft/shollu/  # JVM-only suites → see AGENTS.md there
 ```
 

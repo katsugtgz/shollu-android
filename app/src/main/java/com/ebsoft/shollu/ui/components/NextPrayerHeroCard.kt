@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,12 +69,18 @@ fun NextPrayerHeroCard(
     val countdownText = if (target != null) {
         String.format("%02d : %02d : %02d", hours, minutes, seconds)
     } else "-- : -- : --"
-    // Expressive restyle (#16): the hero reads colorScheme roles — primary gradient
-    // (primary darkened toward black) with onPrimary text and tertiary accents — so the
-    // card follows the active ThemeMode instead of hardcoded emerald.
+    // Expressive restyle (#16): the hero reads colorScheme roles — a primary gradient with
+    // onPrimary content — so the card follows the active ThemeMode instead of hardcoded
+    // emerald. The gradient end darkens a dark primary but LIGHTENS a light one (dark
+    // schemes resolve a light primary with dark onPrimary): either way onPrimary keeps
+    // its contrast against the whole gradient.
     val colorScheme = MaterialTheme.colorScheme
     val heroGradientStart = colorScheme.primary
-    val heroGradientEnd = lerp(colorScheme.primary, Color.Black, 0.45f)
+    val heroGradientEnd = if (colorScheme.onPrimary.luminance() < colorScheme.primary.luminance()) {
+        lerp(colorScheme.primary, Color.White, 0.45f)
+    } else {
+        lerp(colorScheme.primary, Color.Black, 0.45f)
+    }
     // After today's last valid major the target is TOMORROW's slot — say so, or the name and
     // time read as today's prayer.
     val targetIsTomorrow = target != null && target.third.toLocalDate() != cityNow.toLocalDate()
@@ -121,7 +128,7 @@ fun NextPrayerHeroCard(
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = null,
-                                tint = colorScheme.tertiary,
+                                tint = colorScheme.onPrimary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
@@ -136,7 +143,7 @@ fun NextPrayerHeroCard(
 
                     Text(
                         text = hijriDateFormatted,
-                        color = colorScheme.tertiary,
+                        color = colorScheme.onPrimary,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium
                     )
@@ -166,7 +173,7 @@ fun NextPrayerHeroCard(
 
                     Text(
                         text = prayerTimeText,
-                        color = colorScheme.tertiary,
+                        color = colorScheme.onPrimary,
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -189,7 +196,7 @@ fun NextPrayerHeroCard(
                         Icon(
                             imageVector = Icons.Default.Schedule,
                             contentDescription = null,
-                            tint = colorScheme.tertiary,
+                            tint = colorScheme.onPrimary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
