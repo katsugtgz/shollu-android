@@ -17,44 +17,124 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ebsoft.shollu.data.model.AsrJuristic
+import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
+import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.engine.HijriCalendarHelper
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.service.FloatingDropzoneService
 import com.ebsoft.shollu.ui.components.NextPrayerHeroCard
 import com.ebsoft.shollu.ui.components.PrayerCard
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.rememberAppLocale
-import com.ebsoft.shollu.ui.util.rememberTickMillis
+import kotlinx.coroutines.delay
 import java.time.LocalDate
-import java.time.LocalTime
 import java.util.Locale
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun HomeScreen(
-    prayerTimes: PrayerTimes?,
+    prayerRepository: IPrayerRepository,
     selectedCity: City,
+    calculationMethod: CalculationMethod,
+    asrJuristic: AsrJuristic,
+    ihtiyatMinutes: Int,
+    customOffsets: Map<String, Int>,
     hijriAdjustment: Int,
+    cachedSchedule: ScheduleEntry?,
+    onScheduleComputed: (ScheduleEntry) -> Unit,
     onNavigateToQibla: () -> Unit,
     onNavigateToCalendar: () -> Unit,
     onNavigateToLocationPicker: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    // Per-30s wall-clock tick: re-evaluates the next prayer after it passes and refreshes the
-    // date at midnight, instead of freezing the values read at first composition.
-    val tick = rememberTickMillis(intervalMillis = 30_000L)
-    val now = remember(tick) { LocalTime.now() }
-    val today = remember(tick, prayerTimes) { LocalDate.now() }
-    val appLocale = rememberAppLocale()
-    val hijriDate = remember(today, hijriAdjustment) {
-        HijriCalendarHelper.gregorianToHijri(today, hijriAdjustment)
+    // ONE per-second epoch clock, read through derivedStateOf so the per-second writes only
+    // recompose what actually changes: the hero's countdown (reads the clock directly), the
+    // list highlight (only when the next prayer FLIPS, at prayer boundaries), and the city
+    // date (only at city-midnight). Reading the raw state in the body instead would re-run
+    // the whole screen — every PrayerCard — once per second.
+    val clock = remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            clock.value = System.currentTimeMillis()
+            delay(1000L)
+        }
     }
 
-    val (nextPrayerType, nextPrayerTime) = prayerTimes?.getNextPrayer(now) ?: (PrayerType.SUBUH to LocalTime.of(4, 30))
+    // Presentation "now"/"today" in the CITY's frame of reference (same helper the alarm
+    // pipeline uses) — never the device zone, so a traveller's Home shows the city's slot
+    // and the city's calendar date. The date re-keys [scheduleKey] at city-midnight
+    // instantly, so yesterday's schedule is never displayed under the new date.
+    val cityToday by remember(selectedCity.timezone) {
+        derivedStateOf {
+            AlarmTime.cityWallClockNow(clock.value, selectedCity.timezone).toLocalDate()
+        }
+    }
+    val appLocale = rememberAppLocale()
+    val hijriDate = remember(cityToday, hijriAdjustment) {
+        HijriCalendarHelper.gregorianToHijri(cityToday, hijriAdjustment)
+    }
+
+    // Today + tomorrow in the city frame, so the polar-aware selector can roll over to
+    // tomorrow's first valid major prayer after today's last valid slot. Kept as ONE state
+    // value: the selector needs both days, so the hero stays loading until both are ready.
+    // Every entry records the input snapshot it was computed for; [citySchedule] below gates
+    // on that key, so a pair whose inputs no longer match (city/date/settings changed after
+    // it was computed — including via the activity-scoped cache) is never shown. Hero, cards
+    // and share can therefore not present old-city / old-date times under the new city name.
+    // The cache seeding keeps returning to this tab from navigation flash-free.
+    val scheduleKey = ScheduleInputs(
+        date = cityToday,
+        city = selectedCity,
+        method = calculationMethod,
+        juristic = asrJuristic,
+        ihtiyatMinutes = ihtiyatMinutes,
+        customOffsets = customOffsets
+    )
+    var scheduleEntry by remember { mutableStateOf(cachedSchedule) }
+    val citySchedule = scheduleEntry?.takeIf { it.key == scheduleKey }?.schedule
+
+    LaunchedEffect(scheduleKey) {
+        val computed = prayerRepository.calculateForDate(
+            date = cityToday,
+            city = selectedCity,
+            method = calculationMethod,
+            juristic = asrJuristic,
+            ihtiyat = ihtiyatMinutes,
+            offsets = customOffsets
+        ) to prayerRepository.calculateForDate(
+            date = cityToday.plusDays(1),
+            city = selectedCity,
+            method = calculationMethod,
+            juristic = asrJuristic,
+            ihtiyat = ihtiyatMinutes,
+            offsets = customOffsets
+        )
+        val entry = ScheduleEntry(scheduleKey, computed)
+        scheduleEntry = entry
+        onScheduleComputed(entry)
+    }
+
+    // Polar-aware next target for the list highlight: invalid Subuh/Isya placeholders are
+    // never next; after the last valid major today the target is tomorrow's first valid
+    // major (its date is TOMORROW's). derivedStateOf keeps hero and list on the SAME clock
+    // (no disagreement about "next") while only notifying at prayer boundaries — the Triple
+    // is structurally equal every second within a slot.
+    val nextTarget by remember(citySchedule, selectedCity.timezone) {
+        derivedStateOf {
+            citySchedule?.let { (today, tomorrow) ->
+                today.getNextPrayerTarget(
+                    AlarmTime.cityWallClockNow(clock.value, selectedCity.timezone),
+                    tomorrow
+                )
+            }
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -65,10 +145,11 @@ fun HomeScreen(
         // 1. Hero Next Prayer Card with Countdown
         item {
             NextPrayerHeroCard(
-                nextPrayerType = nextPrayerType,
-                nextPrayerTime = nextPrayerTime,
+                schedule = citySchedule,
+                timezoneHours = selectedCity.timezone,
                 cityName = selectedCity.name,
                 hijriDateFormatted = hijriDate.formatDisplay(),
+                clockState = clock,
                 onLocationClick = onNavigateToLocationPicker
             )
             Spacer(modifier = Modifier.height(16.dp))
@@ -96,7 +177,14 @@ fun HomeScreen(
                     icon = Icons.Default.Share,
                     title = "Bagikan",
                     onClick = {
-                        shareTodaySchedule(context, selectedCity, prayerTimes, hijriDate.formatDisplay(), today, appLocale)
+                        shareTodaySchedule(
+                            context = context,
+                            city = selectedCity,
+                            times = citySchedule?.first,
+                            hijriDate = hijriDate.formatDisplay(),
+                            today = cityToday,
+                            locale = appLocale
+                        )
                     },
                     modifier = Modifier.weight(1f)
                 )
@@ -117,7 +205,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", appLocale)),
+                    text = cityToday.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", appLocale)),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -126,7 +214,8 @@ fun HomeScreen(
         }
 
         // 4. Prayer Cards List
-        if (prayerTimes != null) {
+        val times = citySchedule?.first
+        if (times != null) {
             val list = listOf(
                 PrayerType.IMSAK,
                 PrayerType.SUBUH,
@@ -139,8 +228,14 @@ fun HomeScreen(
             )
             items(list.size) { index ->
                 val type = list[index]
-                val formatted = prayerTimes.getFormattedTimeFor(type)
-                val isNext = type == nextPrayerType
+                val formatted = times.getFormattedTimeFor(type)
+                // Highlight only a slot of TODAY's list: once the selector has rolled over to
+                // tomorrow, the target's date is cityToday.plusDays(1) so no card matches — a
+                // type-only match would flag today's already-passed same-type prayer
+                // "Akan Datang".
+                val isNext = nextTarget?.let { (nextType, _, targetDateTime) ->
+                    type == nextType && targetDateTime.toLocalDate() == cityToday
+                } == true
                 PrayerCard(
                     prayerType = type,
                     timeFormatted = formatted,
@@ -219,24 +314,25 @@ private fun shareTodaySchedule(
     city: City,
     times: PrayerTimes?,
     hijriDate: String,
-    today: LocalDate = LocalDate.now(),
+    today: LocalDate,
     locale: Locale = Locale.getDefault()
 ) {
     if (times == null) return
+    val timezoneLabel = AlarmTime.timezoneLabel(city.timezone)
     val text = buildString {
         appendLine("🕌 JADWAL SHOLAT HARI INI")
         appendLine("📍 Lokasi: ${city.name}")
         appendLine("📅 Masehi: ${today.format(DateTimeFormatter.ofPattern("d MMMM yyyy", locale))}")
         appendLine("🌙 Hijriyah: $hijriDate")
         appendLine("------------------------------")
-        appendLine("• Imsak   : ${times.getFormattedTimeFor(PrayerType.IMSAK)} WIB")
-        appendLine("• Subuh   : ${times.getFormattedTimeFor(PrayerType.SUBUH)} WIB")
-        appendLine("• Terbit  : ${times.getFormattedTimeFor(PrayerType.TERBIT)} WIB")
-        appendLine("• Dhuha   : ${times.getFormattedTimeFor(PrayerType.DHUHA)} WIB")
-        appendLine("• Dzuhur  : ${times.getFormattedTimeFor(PrayerType.DZUHUR)} WIB")
-        appendLine("• Ashar   : ${times.getFormattedTimeFor(PrayerType.ASHAR)} WIB")
-        appendLine("• Maghrib : ${times.getFormattedTimeFor(PrayerType.MAGHRIB)} WIB")
-        appendLine("• Isya    : ${times.getFormattedTimeFor(PrayerType.ISYA)} WIB")
+        appendLine("• Imsak   : ${times.getFormattedTimeFor(PrayerType.IMSAK)} $timezoneLabel")
+        appendLine("• Subuh   : ${times.getFormattedTimeFor(PrayerType.SUBUH)} $timezoneLabel")
+        appendLine("• Terbit  : ${times.getFormattedTimeFor(PrayerType.TERBIT)} $timezoneLabel")
+        appendLine("• Dhuha   : ${times.getFormattedTimeFor(PrayerType.DHUHA)} $timezoneLabel")
+        appendLine("• Dzuhur  : ${times.getFormattedTimeFor(PrayerType.DZUHUR)} $timezoneLabel")
+        appendLine("• Ashar   : ${times.getFormattedTimeFor(PrayerType.ASHAR)} $timezoneLabel")
+        appendLine("• Maghrib : ${times.getFormattedTimeFor(PrayerType.MAGHRIB)} $timezoneLabel")
+        appendLine("• Isya    : ${times.getFormattedTimeFor(PrayerType.ISYA)} $timezoneLabel")
         appendLine("------------------------------")
         appendLine("Dihitung secara akurat dengan Shollu")
     }
@@ -248,3 +344,19 @@ private fun shareTodaySchedule(
     }
     context.startActivity(Intent.createChooser(intent, "Bagikan Jadwal Sholat"))
 }
+
+/** Identity of the inputs a schedule pair was computed for — a mismatch means "stale". */
+data class ScheduleInputs(
+    val date: LocalDate,
+    val city: City,
+    val method: CalculationMethod,
+    val juristic: AsrJuristic,
+    val ihtiyatMinutes: Int,
+    val customOffsets: Map<String, Int>
+)
+
+/** A schedule pair plus the [ScheduleInputs] it was computed for. */
+data class ScheduleEntry(
+    val key: ScheduleInputs,
+    val schedule: Pair<PrayerTimes, PrayerTimes>
+)

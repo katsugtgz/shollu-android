@@ -19,7 +19,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.ebsoft.shollu.data.db.entity.DaysOfWeek
 import com.ebsoft.shollu.data.db.entity.ReminderEntity
 import com.ebsoft.shollu.data.db.entity.ReminderType
+import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.repository.IReminderRepository
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import kotlinx.coroutines.launch
@@ -27,12 +29,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun SchedulerScreen(
     reminderRepository: IReminderRepository,
+    selectedCity: City,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val reminders by reminderRepository.allReminders.collectAsState(initial = emptyList())
     var showAddDialog by remember { mutableStateOf(false) }
+    // Reminder times are city-wall times — label them with the city's zone, never a hardcoded WIB.
+    val timezoneLabel = remember(selectedCity.timezone) { AlarmTime.timezoneLabel(selectedCity.timezone) }
 
     Scaffold(
         floatingActionButton = {
@@ -76,13 +81,17 @@ fun SchedulerScreen(
             items(reminders, key = { it.id }) { reminder ->
                 ReminderItemCard(
                     reminder = reminder,
+                    timezoneLabel = timezoneLabel,
                     onToggle = { isChecked ->
                         coroutineScope.launch {
                             val updated = reminder.copy(isEnabled = isChecked)
                             reminderRepository.updateReminder(updated)
                             if (isChecked) {
                                 try {
-                                    com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(context, updated)
+                                    com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(
+                                        context,
+                                        updated
+                                    )
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }
@@ -128,7 +137,10 @@ fun SchedulerScreen(
                     val id = reminderRepository.insertReminder(newReminder)
                     val saved = if (id > 0) newReminder.copy(id = id) else newReminder
                     try {
-                        com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(context, saved)
+                        com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(
+                            context,
+                            saved
+                        )
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -142,6 +154,7 @@ fun SchedulerScreen(
 @Composable
 private fun ReminderItemCard(
     reminder: ReminderEntity,
+    timezoneLabel: String,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -202,7 +215,7 @@ private fun ReminderItemCard(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Pukul $formattedTime WIB",
+                        text = "Pukul $formattedTime $timezoneLabel",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = if (reminder.isEnabled) EmeraldPrimary else Color.Gray

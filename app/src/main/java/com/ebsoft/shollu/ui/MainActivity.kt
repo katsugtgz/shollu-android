@@ -28,9 +28,11 @@ import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.engine.AstroCalculator
 import com.ebsoft.shollu.receiver.AlarmScheduler
+import com.ebsoft.shollu.receiver.ReminderAlarmScheduler
 import com.ebsoft.shollu.ui.navigation.Screen
 import com.ebsoft.shollu.ui.screens.calendar.CalendarScreen
 import com.ebsoft.shollu.ui.screens.home.HomeScreen
+import com.ebsoft.shollu.ui.screens.home.ScheduleEntry
 import com.ebsoft.shollu.ui.screens.qibla.QiblaCompassScreen
 import com.ebsoft.shollu.ui.screens.scheduler.SchedulerScreen
 import com.ebsoft.shollu.ui.screens.settings.LocationPickerDialog
@@ -85,9 +87,15 @@ class MainActivity : ComponentActivity() {
             val hijriAdjustment by preferences.hijriAdjustment.collectAsState(initial = 0)
             val customOffsets by preferences.customOffsets.collectAsState(initial = emptyMap())
 
-            val todayPrayerTimes by prayerRepo.todayPrayerTimes.collectAsState(initial = null)
-
             val navController = rememberNavController()
+            // Activity-scoped cache of Home's city-frame schedule (today+tomorrow), stored with
+            // the input snapshot it was computed for. Navigation disposes the Home composable,
+            // so the cache lets it re-seed without a loading flash — and Home's key gate hides
+            // the cached pair whenever the recorded inputs no longer match (city/settings/date
+            // changed since), so stale times are never displayed.
+            var homeScheduleCache by remember {
+                mutableStateOf<ScheduleEntry?>(null)
+            }
             var showLocationPicker by remember { mutableStateOf(false) }
 
             val items = listOf(
@@ -142,9 +150,15 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable(Screen.Home.route) {
                             HomeScreen(
-                                prayerTimes = todayPrayerTimes,
+                                prayerRepository = prayerRepo,
                                 selectedCity = selectedCity,
+                                calculationMethod = calculationMethod,
+                                asrJuristic = asrJuristic,
+                                ihtiyatMinutes = ihtiyatMinutes,
+                                customOffsets = customOffsets,
                                 hijriAdjustment = hijriAdjustment,
+                                cachedSchedule = homeScheduleCache,
+                                onScheduleComputed = { homeScheduleCache = it },
                                 onNavigateToQibla = { navController.navigate(Screen.Qibla.route) },
                                 onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                 onNavigateToLocationPicker = { showLocationPicker = true }
@@ -164,7 +178,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         composable(Screen.Scheduler.route) {
-                            SchedulerScreen(reminderRepository = reminderRepo)
+                            SchedulerScreen(reminderRepository = reminderRepo, selectedCity = selectedCity)
                         }
 
                         composable(Screen.Qibla.route) {
@@ -200,6 +214,9 @@ class MainActivity : ComponentActivity() {
                                     // flag from a previous detection (its timezone is canonical).
                                     preferences.updateCity(city)
                                     AlarmScheduler.scheduleNextPrayerAlarms(this@MainActivity)
+                                    // Reminders are armed in the city's offset — re-arm them in
+                                    // the new frame or they fire at the OLD city's instant.
+                                    ReminderAlarmScheduler.scheduleAllActiveReminders(this@MainActivity)
                                     com.ebsoft.shollu.widget.updateSholluWidgets(this@MainActivity)
                                     withContext(Dispatchers.Main) {
                                         showLocationPicker = false
@@ -366,6 +383,8 @@ class MainActivity : ComponentActivity() {
             // must be re-derived on ACTION_TIMEZONE_CHANGED (see BootCompletedReceiver).
             app.preferences.updateCity(gpsCity, isGps = true)
             AlarmScheduler.scheduleNextPrayerAlarms(this@MainActivity)
+            // Reminders are armed in the city's offset — re-arm them in the new frame.
+            ReminderAlarmScheduler.scheduleAllActiveReminders(this@MainActivity)
             com.ebsoft.shollu.widget.updateSholluWidgets(this@MainActivity)
 
             withContext(Dispatchers.Main) {

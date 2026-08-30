@@ -8,6 +8,15 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
 composeBom = "2026.06.01"
+# BOM override for material3 only: Expressive APIs (MaterialExpressiveTheme, MotionScheme,
+# ButtonGroup, SearchBarState) do not exist in the BOM's stable material3 line yet.
+# KNOWN LEAK — this override does NOT isolate material3: its POM declares foundation,
+# foundation-layout, runtime, ui-text and material-ripple at 1.12.0-beta01, and Gradle
+# resolves those declared versions ABOVE the BOM's 1.11.x constraints. Every Compose
+# module therefore effectively runs on the 1.12.0-beta01 line. Re-check resolved versions
+# (./gradlew :app:dependencies --configuration releaseRuntimeClasspath) on each material3
+# bump, or pin/align the five artifacts deliberately if the beta line ever breaks.
+material3 = "1.5.0-alpha24"
 navigationCompose = "2.9.8"
 room = "2.8.4"
 ksp = "2.3.11"
@@ -34,7 +43,7 @@ androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
-androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIconsExtended" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 

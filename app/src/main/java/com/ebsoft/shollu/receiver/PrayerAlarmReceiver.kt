@@ -20,6 +20,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                 intent.getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZED, false)
         val prayerName = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_NAME) ?: "Sholat"
         val prayerTime = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_TIME) ?: ""
+        val timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
         val isPrePrayer = intent.getBooleanExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
 
         val serviceIntent = Intent(context, VibrationAlarmService::class.java).apply {
@@ -43,6 +44,10 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                         Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
                 putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, prayerName)
                 putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, prayerTime)
+                // Label of the city that ARMED the alarm — read synchronously by the activity;
+                // re-deriving from the current preference would mismatch the fixed prayerTime
+                // after a city change.
+                putExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL, timezoneLabel)
             }
             context.startActivity(fullscreenIntent)
         }

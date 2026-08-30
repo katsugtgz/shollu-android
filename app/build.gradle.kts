@@ -129,6 +129,15 @@ dependencies {
 
     // Play Services Location
     implementation(libs.play.services.location)
+    // play-services-base transitively pulls androidx.fragment 1.1.0; the app never uses
+    // Fragments, but activity 1.13's InvalidFragmentVersionForActivityResult lint check
+    // (fatal in lintVitalRelease) requires fragment >= 1.3.0 wherever registerForActivityResult
+    // is used. Constrain to current stable instead of shipping the ancient transitive.
+    constraints {
+        implementation("androidx.fragment:fragment:1.9.0") {
+            because("play-services-base pulls fragment 1.1.0; lintVitalRelease requires >= 1.3.0")
+        }
+    }
 
     // Utilities
     implementation(libs.gson)

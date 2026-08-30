@@ -26,6 +26,7 @@ import com.ebsoft.shollu.engine.HijriCalendarHelper
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.rememberAppLocale
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.util.rememberTickMillis
 import java.time.LocalDate
 import java.time.YearMonth
@@ -46,7 +47,20 @@ fun CalendarScreen(
     val context = LocalContext.current
     val appLocale = rememberAppLocale()
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Jadwal Bulanan, 1: Konversi Kalender, 2: Hari Besar
-    var currentYearMonth by remember { mutableStateOf(YearMonth.now()) }
+    // City-frame dates: the browsed month and the "today" highlight must match the city's
+    // calendar date (same frame as Home), never the device zone.
+    val dayTick = rememberTickMillis(intervalMillis = 60_000L)
+    val cityToday = remember(dayTick, selectedCity.timezone) {
+        AlarmTime.cityWallClockNow(timezoneHours = selectedCity.timezone).toLocalDate()
+    }
+    // Follow the city frame while the user has NOT browsed away: month rollovers and city
+    // jumps then keep the "today" highlight visible. Once the user navigates manually, their
+    // chosen month is respected — the ordinary 1st-of-month rollover must not yank the view.
+    var currentYearMonth by remember { mutableStateOf(YearMonth.from(cityToday)) }
+    var browsedAway by remember { mutableStateOf(false) }
+    LaunchedEffect(YearMonth.from(cityToday)) {
+        if (!browsedAway) currentYearMonth = YearMonth.from(cityToday)
+    }
 
     val monthlySchedule = remember(currentYearMonth, selectedCity, calculationMethod, asrJuristic, ihtiyatMinutes, customOffsets) {
         prayerRepository.getMonthlySchedule(
@@ -93,11 +107,16 @@ fun CalendarScreen(
                 schedule = monthlySchedule,
                 city = selectedCity,
                 locale = appLocale,
-                onPreviousMonth = { currentYearMonth = currentYearMonth.minusMonths(1) },
-                onNextMonth = { currentYearMonth = currentYearMonth.plusMonths(1) },
+                today = cityToday,
+                onPreviousMonth = { browsedAway = true; currentYearMonth = currentYearMonth.minusMonths(1) },
+                onNextMonth = { browsedAway = true; currentYearMonth = currentYearMonth.plusMonths(1) },
                 onExport = { exportSchedule(context, selectedCity, currentYearMonth, monthlySchedule, appLocale) }
             )
-            1 -> DateConverterView(hijriAdjustment = hijriAdjustment, locale = appLocale)
+            1 -> DateConverterView(
+                selectedCity = selectedCity,
+                hijriAdjustment = hijriAdjustment,
+                locale = appLocale
+            )
             2 -> IslamicEventsView(hijriAdjustment = hijriAdjustment)
         }
     }
@@ -109,6 +128,7 @@ private fun MonthlyScheduleView(
     schedule: List<PrayerTimes>,
     city: City,
     locale: Locale,
+    today: LocalDate,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onExport: () -> Unit
@@ -185,7 +205,7 @@ private fun MonthlyScheduleView(
                 }
 
                 items(schedule) { item ->
-                    val isToday = item.date == LocalDate.now()
+                    val isToday = item.date == today
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -204,7 +224,7 @@ private fun MonthlyScheduleView(
                         Text(item.getFormattedTimeFor(PrayerType.MAGHRIB), fontSize = 11.sp, modifier = Modifier.width(44.dp))
                         Text(item.getFormattedTimeFor(PrayerType.ISYA), fontSize = 11.sp, modifier = Modifier.width(42.dp))
                     }
-                    Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                 }
             }
         }
@@ -212,10 +232,13 @@ private fun MonthlyScheduleView(
 }
 
 @Composable
-private fun DateConverterView(hijriAdjustment: Int, locale: Locale) {
-    // Day tick keeps "Hari Ini" truthful across midnight.
+private fun DateConverterView(selectedCity: City, hijriAdjustment: Int, locale: Locale) {
+    // Day tick keeps "Hari Ini" truthful across midnight; the CITY frame keeps it matching
+    // the monthly tab's "today" highlight when the device zone differs from the city's.
     val dayTick = rememberTickMillis(intervalMillis = 60_000L)
-    var gregDate by remember(dayTick) { mutableStateOf(LocalDate.now()) }
+    var gregDate by remember(dayTick, selectedCity.timezone) {
+        mutableStateOf(AlarmTime.cityWallClockNow(timezoneHours = selectedCity.timezone).toLocalDate())
+    }
     var hijriResult by remember(gregDate, hijriAdjustment) {
         mutableStateOf(HijriCalendarHelper.gregorianToHijri(gregDate, hijriAdjustment))
     }

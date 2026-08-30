@@ -101,7 +101,19 @@
 - **Background & Alarms**: Exact AlarmManager (`SCHEDULE_EXACT_ALARM`, `USE_EXACT_ALARM`), Foreground Services, Coroutines & Flow
 - **Widgets**: Jetpack Glance 1.1.1
 - **Location**: Google Play Services Location & Android Geocoder
-- **Target SDK**: Android 15 (API 35) | **Min SDK**: Android 8.0 (API 26)
+- **Target SDK**: Android 16 (API 36) | **Min SDK**: Android 8.0 (API 26)
+
+---
+
+## 📥 Download & Install
+
+No Play Store needed — grab the signed release APK:
+
+1. Download `shollu-v3.10.0.apk` from the [Releases page](https://github.com/katsugtgz/shollu-android/releases/latest).
+2. Open it on your device (Android 8.0+). If prompted, allow *"Install unknown apps"* for your browser/file manager.
+3. Install. First launch preloads the city database and arms prayer alarms automatically — 100% offline, no account, no internet required.
+
+> Upgrades install over previous versions signed with the same key. If Android refuses an update, uninstall the old copy first (this wipes local reminders/settings).
 
 ---
 
@@ -110,7 +122,7 @@
 ### Prerequisites
 - Android Studio (Koala, Ladybug, or newer)
 - JDK 17
-- Android SDK 35
+- Android SDK 37 (compileSdk 37 / targetSdk 36)
 
 ### Clone & Build
 ```bash

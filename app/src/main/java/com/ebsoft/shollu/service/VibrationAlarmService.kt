@@ -24,6 +24,7 @@ class VibrationAlarmService : Service() {
         const val ACTION_STOP_VIBRATION = "com.ebsoft.shollu.ACTION_STOP_VIBRATION"
         const val EXTRA_PRAYER_NAME = "extra_prayer_name"
         const val EXTRA_PRAYER_TIME = "extra_prayer_time"
+        const val EXTRA_TIMEZONE_LABEL = "extra_timezone_label"
         const val EXTRA_IS_PRE_PRAYER = "extra_is_pre_prayer"
         const val NOTIFICATION_ID = 2001
         const val CHANNEL_ID = "shollu_prayer_alarm_channel"
