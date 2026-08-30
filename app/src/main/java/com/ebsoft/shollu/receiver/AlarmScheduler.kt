@@ -127,13 +127,10 @@ object AlarmScheduler {
     /**
      * A prayer is schedulable only when its solar time is valid. Polar/high-latitude cities can
      * yield placeholder Subuh/Isya wall times that must never fire alarms (contract: PrayerTimes.
-     * isSubuhValid / isIsyaValid default true).
+     * isSubuhValid / isIsyaValid default true). Delegates to the model's own validity so the
+     * arming filter and the presentation selector (getNextPrayer*) can never drift apart.
      */
-    fun isPrayerValid(type: PrayerType, times: PrayerTimes): Boolean = when (type) {
-        PrayerType.SUBUH -> times.isSubuhValid
-        PrayerType.ISYA -> times.isIsyaValid
-        else -> true
-    }
+    fun isPrayerValid(type: PrayerType, times: PrayerTimes): Boolean = times.isValidMajor(type)
 
     /** The 5 major prayer slots for one day, with invalid Subuh/Isya already removed. */
     fun majorPrayerSlots(times: PrayerTimes, date: LocalDate): List<Triple<PrayerType, LocalTime, LocalDate>> =
