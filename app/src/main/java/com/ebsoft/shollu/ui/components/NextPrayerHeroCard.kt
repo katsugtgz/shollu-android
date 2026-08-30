@@ -18,44 +18,56 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.PrayerType
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import kotlinx.coroutines.delay
-import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun NextPrayerHeroCard(
-    nextPrayerType: PrayerType,
-    nextPrayerTime: LocalTime,
+    nextPrayerType: PrayerType?,
+    nextPrayerTime: LocalTime?,
+    targetDateTime: LocalDateTime?,
+    timezoneHours: Double,
     cityName: String,
     hijriDateFormatted: String,
     onLocationClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var currentTime by remember { mutableStateOf(LocalDateTime.now()) }
+    // 1-second text tick for the HH:MM:SS countdown. The value itself is TRUE-epoch seconds
+    // remaining until the city-wall target instant (AlarmTime), so it is correct even when
+    // the device zone differs from the selected city.
+    var deviceEpochMillis by remember { mutableStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            currentTime = LocalDateTime.now()
+            deviceEpochMillis = System.currentTimeMillis()
             delay(1000L)
         }
     }
 
-    val targetDateTime = LocalDateTime.of(currentTime.toLocalDate(), nextPrayerTime).let {
-        if (it.isBefore(currentTime)) it.plusDays(1) else it
-    }
-    val duration = Duration.between(currentTime, targetDateTime)
-    val totalSeconds = duration.seconds.coerceAtLeast(0)
+    // Null while today's times are not ready — honest empty/loading, never a fabricated slot.
+    val isReady = nextPrayerType != null && nextPrayerTime != null && targetDateTime != null
+    val totalSeconds = if (isReady) {
+        AlarmTime.remainingSecondsUntilCityWall(
+            target = targetDateTime!!,
+            timezoneHours = timezoneHours,
+            deviceEpochMillis = deviceEpochMillis
+        )
+    } else 0L
 
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
 
-    val countdownText = String.format("%02d : %02d : %02d", hours, minutes, seconds)
-    val prayerName = nextPrayerType.displayName
+    val countdownText = if (isReady) {
+        String.format("%02d : %02d : %02d", hours, minutes, seconds)
+    } else "-- : -- : --"
+    val prayerName = nextPrayerType?.displayName ?: "Memuat jadwal…"
+    val prayerTimeText = nextPrayerTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "--:--"
 
     Card(
         shape = RoundedCornerShape(24.dp),
@@ -140,7 +152,7 @@ fun NextPrayerHeroCard(
                     }
 
                     Text(
-                        text = nextPrayerTime.format(DateTimeFormatter.ofPattern("HH:mm")),
+                        text = prayerTimeText,
                         color = EmeraldGold,
                         fontSize = 34.sp,
                         fontWeight = FontWeight.ExtraBold

@@ -85,8 +85,6 @@ class MainActivity : ComponentActivity() {
             val hijriAdjustment by preferences.hijriAdjustment.collectAsState(initial = 0)
             val customOffsets by preferences.customOffsets.collectAsState(initial = emptyMap())
 
-            val todayPrayerTimes by prayerRepo.todayPrayerTimes.collectAsState(initial = null)
-
             val navController = rememberNavController()
             var showLocationPicker by remember { mutableStateOf(false) }
 
@@ -142,8 +140,12 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable(Screen.Home.route) {
                             HomeScreen(
-                                prayerTimes = todayPrayerTimes,
+                                prayerRepository = prayerRepo,
                                 selectedCity = selectedCity,
+                                calculationMethod = calculationMethod,
+                                asrJuristic = asrJuristic,
+                                ihtiyatMinutes = ihtiyatMinutes,
+                                customOffsets = customOffsets,
                                 hijriAdjustment = hijriAdjustment,
                                 onNavigateToQibla = { navController.navigate(Screen.Qibla.route) },
                                 onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
@@ -164,7 +166,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         composable(Screen.Scheduler.route) {
-                            SchedulerScreen(reminderRepository = reminderRepo)
+                            SchedulerScreen(reminderRepository = reminderRepo, selectedCity = selectedCity)
                         }
 
                         composable(Screen.Qibla.route) {

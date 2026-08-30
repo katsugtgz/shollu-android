@@ -21,11 +21,11 @@ import androidx.glance.unit.ColorProvider
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
 import com.ebsoft.shollu.data.preferences.SholluPreferences
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.flow.first
-import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -41,9 +41,15 @@ class SholluAppWidget : GlanceAppWidget() {
         val ihtiyat = preferences.ihtiyatMinutes.first()
         val offsets = preferences.customOffsets.first()
 
-        val today = LocalDate.now()
+        // City-frame now/today: the tile must show the CITY's calendar date and next prayer
+        // even when the device zone differs (same helper the alarm pipeline uses).
+        val now = AlarmTime.cityWallClockNow(timezoneHours = city.timezone)
+        val today = now.toLocalDate()
         val prayerTimes = prayerRepository.calculateForDate(today, city, method, juristic, ihtiyat, offsets)
-        val (nextType, nextTime) = prayerTimes.getNextPrayer(LocalTime.now())
+        val tomorrowTimes = prayerRepository.calculateForDate(today.plusDays(1), city, method, juristic, ihtiyat, offsets)
+        // Polar-aware selector: skips invalid Subuh/Isya; after the last valid major today,
+        // targets tomorrow's first valid major.
+        val (nextType, nextTime, _) = prayerTimes.getNextPrayerTarget(now, tomorrowTimes)
 
         provideContent {
             WidgetContent(

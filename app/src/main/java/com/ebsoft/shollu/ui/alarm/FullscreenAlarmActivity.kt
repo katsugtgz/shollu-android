@@ -27,7 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.AlarmScheduler
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
@@ -43,10 +45,17 @@ class FullscreenAlarmActivity : ComponentActivity() {
         val prayerTime = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_TIME) ?: ""
 
         setContent {
+            // Prayer alarms are armed in the CITY's fixed offset — label the time line with
+            // the city's zone (WIB/WITA/WIT/UTC±), never a hardcoded WIB.
+            val app = application as SholluApplication
+            val city by app.preferences.selectedCity.collectAsState(initial = null)
+            val timezoneLabel = city?.let { AlarmTime.timezoneLabel(it.timezone) }
+
             SholluTheme {
                 FullscreenAlarmScreen(
                     prayerName = prayerName,
                     prayerTime = prayerTime,
+                    timezoneLabel = timezoneLabel,
                     onStopVibration = {
                         stopVibration()
                         finish()
@@ -92,6 +101,7 @@ class FullscreenAlarmActivity : ComponentActivity() {
 fun FullscreenAlarmScreen(
     prayerName: String,
     prayerTime: String,
+    timezoneLabel: String?,
     onStopVibration: () -> Unit,
     onSnooze: () -> Unit
 ) {
@@ -172,7 +182,7 @@ fun FullscreenAlarmScreen(
             if (prayerTime.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "$prayerTime WIB",
+                    text = if (timezoneLabel != null) "$prayerTime $timezoneLabel" else prayerTime,
                     color = EmeraldGold,
                     fontSize = 32.sp,
                     fontWeight = FontWeight.ExtraBold

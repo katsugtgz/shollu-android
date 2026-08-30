@@ -17,10 +17,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ebsoft.shollu.data.model.AsrJuristic
+import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
+import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.engine.HijriCalendarHelper
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.service.FloatingDropzoneService
 import com.ebsoft.shollu.ui.components.NextPrayerHeroCard
 import com.ebsoft.shollu.ui.components.PrayerCard
@@ -29,14 +33,19 @@ import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.rememberAppLocale
 import com.ebsoft.shollu.ui.util.rememberTickMillis
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.Locale
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun HomeScreen(
-    prayerTimes: PrayerTimes?,
+    prayerRepository: IPrayerRepository,
     selectedCity: City,
+    calculationMethod: CalculationMethod,
+    asrJuristic: AsrJuristic,
+    ihtiyatMinutes: Int,
+    customOffsets: Map<String, Int>,
     hijriAdjustment: Int,
     onNavigateToQibla: () -> Unit,
     onNavigateToCalendar: () -> Unit,
@@ -47,14 +56,47 @@ fun HomeScreen(
     // Per-30s wall-clock tick: re-evaluates the next prayer after it passes and refreshes the
     // date at midnight, instead of freezing the values read at first composition.
     val tick = rememberTickMillis(intervalMillis = 30_000L)
-    val now = remember(tick) { LocalTime.now() }
-    val today = remember(tick, prayerTimes) { LocalDate.now() }
+
+    // Presentation "now"/"today" in the CITY's frame of reference (same helper the alarm
+    // pipeline uses) — never the device zone, so a traveller's Home shows the city's slot
+    // and the city's calendar date.
+    val cityNow = remember(tick, selectedCity.timezone) {
+        AlarmTime.cityWallClockNow(timezoneHours = selectedCity.timezone)
+    }
+    val cityToday = cityNow.toLocalDate()
     val appLocale = rememberAppLocale()
-    val hijriDate = remember(today, hijriAdjustment) {
-        HijriCalendarHelper.gregorianToHijri(today, hijriAdjustment)
+    val hijriDate = remember(cityToday, hijriAdjustment) {
+        HijriCalendarHelper.gregorianToHijri(cityToday, hijriAdjustment)
     }
 
-    val (nextPrayerType, nextPrayerTime) = prayerTimes?.getNextPrayer(now) ?: (PrayerType.SUBUH to LocalTime.of(4, 30))
+    // Today + tomorrow in the city frame, so the polar-aware selector can roll over to
+    // tomorrow's first valid major prayer after today's last valid slot. Kept as ONE state
+    // value: the selector needs both days, so the hero stays loading until both are ready.
+    var citySchedule by remember { mutableStateOf<Pair<PrayerTimes, PrayerTimes>?>(null) }
+    LaunchedEffect(cityToday, selectedCity, calculationMethod, asrJuristic, ihtiyatMinutes, customOffsets) {
+        citySchedule = prayerRepository.calculateForDate(
+            date = cityToday,
+            city = selectedCity,
+            method = calculationMethod,
+            juristic = asrJuristic,
+            ihtiyat = ihtiyatMinutes,
+            offsets = customOffsets
+        ) to prayerRepository.calculateForDate(
+            date = cityToday.plusDays(1),
+            city = selectedCity,
+            method = calculationMethod,
+            juristic = asrJuristic,
+            ihtiyat = ihtiyatMinutes,
+            offsets = customOffsets
+        )
+    }
+
+    // Polar-aware next target: invalid Subuh/Isya placeholders are never next; after the
+    // last valid major today the target is tomorrow's first valid major. Null while the
+    // times are not ready — no fabricated Subuh 04:30.
+    val nextTarget = citySchedule?.let { (today, tomorrow) -> today.getNextPrayerTarget(cityNow, tomorrow) }
+    val (nextPrayerType, nextPrayerTime, nextPrayerTargetDateTime) =
+        nextTarget ?: Triple<PrayerType?, LocalTime?, LocalDateTime?>(null, null, null)
 
     LazyColumn(
         modifier = modifier
@@ -67,6 +109,8 @@ fun HomeScreen(
             NextPrayerHeroCard(
                 nextPrayerType = nextPrayerType,
                 nextPrayerTime = nextPrayerTime,
+                targetDateTime = nextPrayerTargetDateTime,
+                timezoneHours = selectedCity.timezone,
                 cityName = selectedCity.name,
                 hijriDateFormatted = hijriDate.formatDisplay(),
                 onLocationClick = onNavigateToLocationPicker
@@ -96,7 +140,15 @@ fun HomeScreen(
                     icon = Icons.Default.Share,
                     title = "Bagikan",
                     onClick = {
-                        shareTodaySchedule(context, selectedCity, prayerTimes, hijriDate.formatDisplay(), today, appLocale)
+                        shareTodaySchedule(
+                            context = context,
+                            city = selectedCity,
+                            times = citySchedule?.first,
+                            hijriDate = hijriDate.formatDisplay(),
+                            timezoneLabel = AlarmTime.timezoneLabel(selectedCity.timezone),
+                            today = cityToday,
+                            locale = appLocale
+                        )
                     },
                     modifier = Modifier.weight(1f)
                 )
@@ -117,7 +169,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", appLocale)),
+                    text = cityToday.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", appLocale)),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -126,7 +178,8 @@ fun HomeScreen(
         }
 
         // 4. Prayer Cards List
-        if (prayerTimes != null) {
+        val times = citySchedule?.first
+        if (times != null) {
             val list = listOf(
                 PrayerType.IMSAK,
                 PrayerType.SUBUH,
@@ -139,7 +192,7 @@ fun HomeScreen(
             )
             items(list.size) { index ->
                 val type = list[index]
-                val formatted = prayerTimes.getFormattedTimeFor(type)
+                val formatted = times.getFormattedTimeFor(type)
                 val isNext = type == nextPrayerType
                 PrayerCard(
                     prayerType = type,
@@ -219,7 +272,8 @@ private fun shareTodaySchedule(
     city: City,
     times: PrayerTimes?,
     hijriDate: String,
-    today: LocalDate = LocalDate.now(),
+    timezoneLabel: String,
+    today: LocalDate,
     locale: Locale = Locale.getDefault()
 ) {
     if (times == null) return
@@ -229,14 +283,14 @@ private fun shareTodaySchedule(
         appendLine("📅 Masehi: ${today.format(DateTimeFormatter.ofPattern("d MMMM yyyy", locale))}")
         appendLine("🌙 Hijriyah: $hijriDate")
         appendLine("------------------------------")
-        appendLine("• Imsak   : ${times.getFormattedTimeFor(PrayerType.IMSAK)} WIB")
-        appendLine("• Subuh   : ${times.getFormattedTimeFor(PrayerType.SUBUH)} WIB")
-        appendLine("• Terbit  : ${times.getFormattedTimeFor(PrayerType.TERBIT)} WIB")
-        appendLine("• Dhuha   : ${times.getFormattedTimeFor(PrayerType.DHUHA)} WIB")
-        appendLine("• Dzuhur  : ${times.getFormattedTimeFor(PrayerType.DZUHUR)} WIB")
-        appendLine("• Ashar   : ${times.getFormattedTimeFor(PrayerType.ASHAR)} WIB")
-        appendLine("• Maghrib : ${times.getFormattedTimeFor(PrayerType.MAGHRIB)} WIB")
-        appendLine("• Isya    : ${times.getFormattedTimeFor(PrayerType.ISYA)} WIB")
+        appendLine("• Imsak   : ${times.getFormattedTimeFor(PrayerType.IMSAK)} $timezoneLabel")
+        appendLine("• Subuh   : ${times.getFormattedTimeFor(PrayerType.SUBUH)} $timezoneLabel")
+        appendLine("• Terbit  : ${times.getFormattedTimeFor(PrayerType.TERBIT)} $timezoneLabel")
+        appendLine("• Dhuha   : ${times.getFormattedTimeFor(PrayerType.DHUHA)} $timezoneLabel")
+        appendLine("• Dzuhur  : ${times.getFormattedTimeFor(PrayerType.DZUHUR)} $timezoneLabel")
+        appendLine("• Ashar   : ${times.getFormattedTimeFor(PrayerType.ASHAR)} $timezoneLabel")
+        appendLine("• Maghrib : ${times.getFormattedTimeFor(PrayerType.MAGHRIB)} $timezoneLabel")
+        appendLine("• Isya    : ${times.getFormattedTimeFor(PrayerType.ISYA)} $timezoneLabel")
         appendLine("------------------------------")
         appendLine("Dihitung secara akurat dengan Shollu")
     }
