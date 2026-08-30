@@ -10,10 +10,12 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.ebsoft.shollu.R
+import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class ReminderAlarmReceiver : BroadcastReceiver() {
@@ -84,8 +86,13 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 val reminder = db.reminderDao().getReminderById(reminderId)
                 if (reminder != null && reminder.isEnabled) {
                     if (reminder.daysOfWeek.isOnce) {
-                        db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
+                        // Locked (with the batch rescheduler) so a concurrent city-change
+                        // reschedule cannot re-arm this one-shot after we disable it.
+                        ReminderAlarmScheduler.disableFiredOnceReminder(context, reminder)
                     } else {
+                        // Recur in the CURRENT city's frame: the offset is re-read inside the
+                        // scheduler's lock at arm time, so reminders follow city changes — the
+                        // same frame the Scheduler screen labels the times with.
                         ReminderAlarmScheduler.scheduleReminder(context, reminder)
                     }
                 }

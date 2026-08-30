@@ -8,13 +8,24 @@ import android.os.Build
 import com.ebsoft.shollu.data.db.SholluDatabase
 import com.ebsoft.shollu.data.db.entity.DaysOfWeek
 import com.ebsoft.shollu.data.db.entity.ReminderEntity
+import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.LocalDateTime
-import java.time.ZoneId
 
 object ReminderAlarmScheduler {
+
+    /**
+     * Serializes every arm/cancel/disable batch against the DB + AlarmManager pair. Without
+     * it, two overlapping reschedule runs can mix offsets (run A read the OLD city, run B the
+     * new), and a city-change batch can re-arm a one-shot reminder that fired concurrently —
+     * the receiver then disables the DB row but the batch's fresh alarm stays live.
+     */
+    private val rescheduleMutex = Mutex()
 
     /**
      * Disjoint request code formula for Agenda Reminders to prevent collisions with prayer alarms.
@@ -100,35 +111,81 @@ object ReminderAlarmScheduler {
      * instead it is disabled in the DB and its alarm cancelled — documented as expired.
      */
     suspend fun scheduleAllActiveReminders(context: Context, reschedulingAfterBoot: Boolean = false) {
-        val db = SholluDatabase.getDatabase(context, CoroutineScope(Dispatchers.IO))
-        val activeReminders = db.reminderDao().getActiveReminders()
-        for (reminder in activeReminders) {
-            if (reschedulingAfterBoot && hasExpiredOnceReminder(reminder, LocalDateTime.now())) {
-                db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
-                cancelReminder(context, reminder.id)
-                continue
+        rescheduleMutex.withLock {
+            val db = SholluDatabase.getDatabase(context, CoroutineScope(Dispatchers.IO))
+            val activeReminders = db.reminderDao().getActiveReminders()
+            // One preference read for the whole batch INSIDE the lock; the CITY's fixed offset
+            // decides both the ONCE-expiry check and every epoch conversion (city frame, never
+            // the device zone). Serializing the read+arm pair is what makes concurrent runs
+            // act on a consistent city snapshot instead of a torn mix of offsets.
+            val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
+            val cityNow = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
+            for (reminder in activeReminders) {
+                if (reschedulingAfterBoot && hasExpiredOnceReminder(reminder, cityNow)) {
+                    // Targeted column update: the entity may predate a concurrent user edit,
+                    // and a full-row @Update would clobber it.
+                    db.reminderDao().setReminderEnabled(reminder.id, false)
+                    cancelReminderLocked(context, reminder.id)
+                    continue
+                }
+                scheduleReminderLocked(context, reminder, timezoneHours)
             }
-            scheduleReminder(context, reminder)
         }
     }
 
     /**
      * Schedule a specific reminder with AlarmManager.
+     *
+     * Reminder wall times belong to the CITY's fixed offset — the same frame the Scheduler
+     * screen labels them with ("Pukul 06:00 WIB"). Converting with [java.time.ZoneId.systemDefault]
+     * would fire at a different instant than that label whenever the device zone differs
+     * from the city's; both "now" and the trigger conversion use the city frame. The offset
+     * is read from preferences INSIDE the lock so a city change that wins the mutex first
+     * cannot be overwritten by this arming with a pre-read stale offset.
      */
-    fun scheduleReminder(context: Context, reminder: ReminderEntity) {
+    suspend fun scheduleReminder(context: Context, reminder: ReminderEntity) {
+        rescheduleMutex.withLock {
+            val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
+            scheduleReminderLocked(context, reminder, timezoneHours)
+        }
+    }
+
+    /**
+     * Disable a one-shot reminder whose alarm just fired: cancels any (re-)armed alarm for it
+     * and flips the DB row under the same lock the batch rescheduler uses, so a concurrent
+     * city-change reschedule can never re-arm a reminder this is disabling (and vice versa).
+     * The disable is a targeted column update — the entity read before the lock may predate
+     * a concurrent user edit that a full-row @Update would clobber.
+     */
+    suspend fun disableFiredOnceReminder(context: Context, reminder: ReminderEntity) {
+        rescheduleMutex.withLock {
+            val db = SholluDatabase.getDatabase(context, CoroutineScope(Dispatchers.IO))
+            db.reminderDao().setReminderEnabled(reminder.id, false)
+            cancelReminderLocked(context, reminder.id)
+        }
+    }
+
+    /**
+     * Cancel an active reminder from AlarmManager.
+     */
+    suspend fun cancelReminder(context: Context, reminderId: Long) {
+        rescheduleMutex.withLock { cancelReminderLocked(context, reminderId) }
+    }
+
+    private fun scheduleReminderLocked(context: Context, reminder: ReminderEntity, timezoneHours: Double) {
         if (!reminder.isEnabled) {
-            cancelReminder(context, reminder.id)
+            cancelReminderLocked(context, reminder.id)
             return
         }
 
-        val now = LocalDateTime.now()
+        val now = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
         val triggerDateTime = getNextTriggerDateTime(
             now = now,
             timeHour = reminder.timeHour,
             timeMinute = reminder.timeMinute,
             daysOfWeek = reminder.daysOfWeek
         )
-        val epochMillis = triggerDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val epochMillis = AlarmTime.epochMillisForCity(triggerDateTime, timezoneHours)
 
         val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
             action = ReminderAlarmReceiver.ACTION_REMINDER_ALARM
@@ -150,10 +207,7 @@ object ReminderAlarmScheduler {
         scheduleExactAlarm(context, alarmManager, epochMillis, pendingIntent)
     }
 
-    /**
-     * Cancel an active reminder from AlarmManager.
-     */
-    fun cancelReminder(context: Context, reminderId: Long) {
+    private fun cancelReminderLocked(context: Context, reminderId: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
             action = ReminderAlarmReceiver.ACTION_REMINDER_ALARM

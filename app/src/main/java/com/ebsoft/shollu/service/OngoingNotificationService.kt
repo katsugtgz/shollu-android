@@ -10,19 +10,14 @@ import com.ebsoft.shollu.R
 import com.ebsoft.shollu.data.model.AsrJuristic
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.City
-import com.ebsoft.shollu.data.model.PrayerTimes
-import com.ebsoft.shollu.data.model.PrayerType
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
-import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 class OngoingNotificationService : Service() {
@@ -107,10 +102,8 @@ class OngoingNotificationService : Service() {
                         ihtiyat = config.ihtiyat,
                         offsets = config.offsets
                     )
-
-                    val (nextPrayerType, nextPrayerTime, targetDateTime) = getNextPrayerTarget(
-                        now = now,
-                        todayTimes = todayPrayerTimes,
+                    val tomorrowPrayerTimes = prayerRepository.calculateForDate(
+                        date = now.toLocalDate().plusDays(1),
                         city = config.city,
                         method = config.method,
                         juristic = config.juristic,
@@ -118,13 +111,23 @@ class OngoingNotificationService : Service() {
                         offsets = config.offsets
                     )
 
+                    // Shared polar-aware selector (PrayerTimes.getNextPrayerTarget): skips
+                    // invalid Subuh/Isya and rolls over to tomorrow's first valid major —
+                    // identical to the scheduler's arming filter by construction.
+                    val (nextPrayerType, nextPrayerTime, targetDateTime) =
+                        todayPrayerTimes.getNextPrayerTarget(now, tomorrowPrayerTimes)
+
                     // Convert using the CITY's fixed offset — never the device zone.
                     val targetEpochMillis = AlarmTime.epochMillisForCity(targetDateTime, config.city.timezone)
                     val prayerDisplayName = nextPrayerType.displayName
                     val formattedPrayerTime = nextPrayerTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+                    // After today's last valid major the target is TOMORROW's slot — label it,
+                    // or the countdown reads as today's already-passed prayer.
+                    val targetIsTomorrow = targetDateTime.toLocalDate() != now.toLocalDate()
+                    val displayNameWithDay = if (targetIsTomorrow) "$prayerDisplayName (Besok)" else prayerDisplayName
 
                     updateNotification(
-                        title = "Menuju $prayerDisplayName ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",
+                        title = "Menuju $displayNameWithDay ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",
                         content = "${config.city.name} • Shollu Pengingat Sholat",
                         subText = "Hitung Mundur Sholat",
                         targetEpochMillis = targetEpochMillis
@@ -138,59 +141,6 @@ class OngoingNotificationService : Service() {
                 }
             }
         }
-    }
-
-    private data class NextPrayerTarget(
-        val type: PrayerType,
-        val time: LocalTime,
-        val targetDateTime: LocalDateTime
-    )
-
-    private fun getNextPrayerTarget(
-        now: LocalDateTime,
-        todayTimes: PrayerTimes,
-        city: City,
-        method: CalculationMethod,
-        juristic: AsrJuristic,
-        ihtiyat: Int,
-        offsets: Map<String, Int>
-    ): NextPrayerTarget {
-        val currentTime = now.toLocalTime()
-        // Invalid (polar) Subuh/Isya placeholders must never become countdown targets.
-        val majorPrayers = listOf(
-            PrayerType.SUBUH to todayTimes.subuh,
-            PrayerType.DZUHUR to todayTimes.dzuhur,
-            PrayerType.ASHAR to todayTimes.ashar,
-            PrayerType.MAGHRIB to todayTimes.maghrib,
-            PrayerType.ISYA to todayTimes.isya
-        ).filter { (type, _) -> AlarmScheduler.isPrayerValid(type, todayTimes) }
-
-        for ((type, time) in majorPrayers) {
-            if (currentTime.isBefore(time)) {
-                return NextPrayerTarget(type, time, LocalDateTime.of(now.toLocalDate(), time))
-            }
-        }
-
-        // Next: after-Isya / midnight rollover to TOMORROW's first VALID major prayer.
-        // Polar safety: an invalid (placeholder) Subuh is never the countdown target — no
-        // alarm will fire for it, so counting down to it would fabricate a deadline. The
-        // first valid slot of the new day (Subuh, else Dzuhur/Ashar/Maghrib/Isya) is always
-        // alarm-backed, so a target always exists (see AlarmScheduler.nextValidRolloverTarget).
-        val tomorrow = now.toLocalDate().plusDays(1)
-        val tomorrowTimes = prayerRepository.calculateForDate(
-            date = tomorrow,
-            city = city,
-            method = method,
-            juristic = juristic,
-            ihtiyat = ihtiyat,
-            offsets = offsets
-        )
-        val rollover = AlarmScheduler.nextValidRolloverTarget(tomorrowTimes, tomorrow)
-        return NextPrayerTarget(
-            type = rollover.first,
-            time = rollover.second,
-            targetDateTime = LocalDateTime.of(rollover.third, rollover.second)
-        )
     }
 
     private fun updateNotification(

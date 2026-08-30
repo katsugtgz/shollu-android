@@ -24,6 +24,14 @@ interface ReminderDao {
     @Update
     suspend fun updateReminder(reminder: ReminderEntity)
 
+    /**
+     * Atomic enable/disable by id — unlike [updateReminder] this cannot clobber other
+     * columns with a stale entity read before the write (e.g. a one-shot fired while the
+     * user was editing it).
+     */
+    @Query("UPDATE reminders SET isEnabled = :enabled WHERE id = :id")
+    suspend fun setReminderEnabled(id: Long, enabled: Boolean)
+
     @Delete
     suspend fun deleteReminder(reminder: ReminderEntity)
 
