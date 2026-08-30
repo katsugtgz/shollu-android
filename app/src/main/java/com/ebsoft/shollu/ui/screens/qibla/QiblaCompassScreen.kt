@@ -24,18 +24,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.engine.QiblaCalculator
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import kotlin.math.abs
 
 /** Current display rotation (Surface.ROTATION_*), refreshed on configuration change. */
@@ -184,6 +180,12 @@ fun QiblaCompassScreen(
         label = "compassAzimuth"
     )
 
+    // Theme roles resolved in composable scope so the Canvas draw lambdas stay token-driven
+    // (issue #17) — the bearing/compass math above is untouched.
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
+    val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -197,12 +199,12 @@ fun QiblaCompassScreen(
                 text = "Penunjuk Arah Kiblat",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = EmeraldPrimary
+                color = primaryColor
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "${selectedCity.name} • ${String.format("%.0f", distanceKm)} km ke Ka'bah",
-                fontSize = 13.sp,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -223,7 +225,7 @@ fun QiblaCompassScreen(
 
                 // Outer Dial
                 drawCircle(
-                    color = Color(0xFF0D6A53),
+                    color = primaryColor,
                     radius = radius,
                     center = center,
                     style = Stroke(width = 4.dp.toPx())
@@ -231,7 +233,7 @@ fun QiblaCompassScreen(
 
                 // Cardinal Markers (N, E, S, W)
                 drawCircle(
-                    color = Color(0xFFD4AF37),
+                    color = tertiaryColor,
                     radius = radius - 16.dp.toPx(),
                     center = center,
                     style = Stroke(width = 1.5.dp.toPx())
@@ -257,7 +259,7 @@ fun QiblaCompassScreen(
                         lineTo(center.x - 16.dp.toPx(), center.y)
                         close()
                     }
-                    drawPath(pathNorth, if (isAligned) EmeraldGold else Color(0xFFD4AF37))
+                    drawPath(pathNorth, tertiaryColor)
 
                     // South Needle
                     val pathSouth = Path().apply {
@@ -267,11 +269,11 @@ fun QiblaCompassScreen(
                         lineTo(center.x - 12.dp.toPx(), center.y)
                         close()
                     }
-                    drawPath(pathSouth, Color(0xFF718096))
+                    drawPath(pathSouth, onSurfaceVariantColor)
 
                     // Center Pivot
-                    drawCircle(color = Color(0xFF0D6A53), radius = 8.dp.toPx(), center = center)
-                    drawCircle(color = EmeraldGold, radius = 4.dp.toPx(), center = center)
+                    drawCircle(color = primaryColor, radius = 8.dp.toPx(), center = center)
+                    drawCircle(color = tertiaryColor, radius = 4.dp.toPx(), center = center)
                 }
             }
 
@@ -279,7 +281,7 @@ fun QiblaCompassScreen(
                 Box(
                     modifier = Modifier
                         .size(60.dp)
-                        .background(Color(0x33D4AF37), CircleShape)
+                        .background(tertiaryColor.copy(alpha = 0.2f), CircleShape)
                 )
             }
         }
@@ -312,7 +314,7 @@ fun QiblaCompassScreen(
                         Text(
                             text = "Kompas tidak tersedia pada perangkat ini. Arah kiblat: ${String.format("%.1f", qiblaBearing)}° dari utara sejati.",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -320,7 +322,7 @@ fun QiblaCompassScreen(
             } else if (isAligned) {
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = EmeraldGold.copy(alpha = 0.2f)),
+                    colors = CardDefaults.cardColors(containerColor = tertiaryColor.copy(alpha = 0.2f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -333,15 +335,15 @@ fun QiblaCompassScreen(
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = EmeraldGold,
+                            tint = tertiaryColor,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Tepat Menghadap Ka'bah! (${String.format("%.1f", qiblaBearing)}°)",
                             fontWeight = FontWeight.Bold,
-                            color = EmeraldPrimary,
-                            fontSize = 15.sp
+                            color = primaryColor,
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }
@@ -349,7 +351,7 @@ fun QiblaCompassScreen(
                 Text(
                     text = "Arah Ka'bah: ${String.format("%.1f", qiblaBearing)}° • Kompas (utara sejati): ${String.format("%.1f", trueAzimuth)}°",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -357,7 +359,7 @@ fun QiblaCompassScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Card(
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -368,13 +370,13 @@ fun QiblaCompassScreen(
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = null,
-                        tint = EmeraldPrimary,
+                        tint = primaryColor,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Letakkan HP pada permukaan datar. Jauhkan dari benda bermagnet untuk akurasi terbaik.",
-                        fontSize = 11.sp,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
