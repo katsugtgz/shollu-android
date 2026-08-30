@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocationCity
@@ -16,12 +17,35 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.repository.CityRepository
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
+import kotlinx.coroutines.launch
+import java.util.Locale
 
+/**
+ * Pure city-query matcher behind the location picker's search bar (issue #19).
+ *
+ * Semantics (JVM-tested in LocationPickerFilterTest, expected values hand-worked from the
+ * seed list in res/raw/cities.json):
+ *  - blank query returns every city, input order preserved (Indonesia first, name asc);
+ *  - matching is case-insensitive (Locale.ROOT) after trimming, against name OR province,
+ *    so parenthetical aliases resolve ("solo" -> "Surakarta (Solo)", "mecca" -> "Makkah (Mecca)");
+ *  - every whitespace-separated term must match somewhere (AND), e.g. "tangerang selatan"
+ *    resolves to exactly "Tangerang Selatan", "jawa barat" to the Jawa Barat cities;
+ *  - no match yields an empty list; relative input order is never reordered.
+ */
+internal fun filterCities(cities: List<City>, query: String): List<City> {
+    val terms = query.trim().lowercase(Locale.ROOT).split(Regex("\\s+")).filter { it.isNotEmpty() }
+    if (terms.isEmpty()) return cities
+    return cities.filter { city ->
+        val name = city.name.lowercase(Locale.ROOT)
+        val province = city.province.lowercase(Locale.ROOT)
+        terms.all { term -> term in name || term in province }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationPickerDialog(
     cityRepository: CityRepository,
@@ -29,8 +53,18 @@ fun LocationPickerDialog(
     onAutoGpsClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    val cities by cityRepository.searchCities(searchQuery).collectAsState(initial = emptyList())
+    val allCities by cityRepository.allCities.collectAsState(initial = emptyList())
+    val textFieldState = rememberTextFieldState()
+    val searchBarState = rememberSearchBarState()
+    val scope = rememberCoroutineScope()
+
+    val query = textFieldState.text.toString()
+    val cities = remember(allCities, query) { filterCities(allCities, query) }
+
+    val selectCity: (City) -> Unit = { city ->
+        onCitySelected(city)
+        onDismiss()
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -55,10 +89,14 @@ fun LocationPickerDialog(
                         text = "Pilih Kota / Lokasi",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = EmeraldPrimary
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Tutup")
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Tutup",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
@@ -70,8 +108,7 @@ fun LocationPickerDialog(
                         onAutoGpsClick()
                         onDismiss()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.MyLocation, contentDescription = null)
@@ -81,61 +118,99 @@ fun LocationPickerDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Search Input
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    placeholder = { Text("Cari 500+ Kota / Kabupaten...") },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
+                val inputField: @Composable () -> Unit = {
+                    SearchBarDefaults.InputField(
+                        textFieldState = textFieldState,
+                        searchBarState = searchBarState,
+                        onSearch = { scope.launch { searchBarState.animateToCollapsed() } },
+                        placeholder = { Text("Cari 500+ Kota / Kabupaten...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                }
+
+                // Collapsed bar (Material 3 SearchBarState API — not the deprecated
+                // expanded/onExpandedChange overload) + results popup when expanded.
+                SearchBar(
+                    state = searchBarState,
+                    inputField = inputField,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // City List
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ExpandedDockedSearchBar(
+                    state = searchBarState,
+                    inputField = inputField,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    items(cities, key = { it.id }) { city ->
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onCitySelected(city)
-                                    onDismiss()
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.LocationCity,
-                                    contentDescription = null,
-                                    tint = EmeraldPrimary,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = city.name,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                    Text(
-                                        text = "${city.province} • ${city.country} (${city.latitude}, ${city.longitude})",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
+                    CityList(
+                        cities = cities,
+                        onCityClick = selectCity,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                    )
+                }
+
+                // Browse list while the bar is collapsed.
+                if (searchBarState.currentValue == SearchBarValue.Collapsed) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    CityList(
+                        cities = cities,
+                        onCityClick = selectCity,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CityList(
+    cities: List<City>,
+    onCityClick: (City) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items(cities, key = { it.id }) { city ->
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onCityClick(city) }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationCity,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = city.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${city.province} • ${city.country} (${city.latitude}, ${city.longitude})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
