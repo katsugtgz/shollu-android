@@ -2,18 +2,28 @@ package com.ebsoft.shollu.widget
 
 import androidx.compose.ui.graphics.Color
 import com.ebsoft.shollu.data.model.ThemeMode
+import com.ebsoft.shollu.ui.theme.AmoledAccentGold
+import com.ebsoft.shollu.ui.theme.AmoledBackground
+import com.ebsoft.shollu.ui.theme.DarkBackground
+import com.ebsoft.shollu.ui.theme.DarkPrimary
+import com.ebsoft.shollu.ui.theme.EmeraldGold
+import com.ebsoft.shollu.ui.theme.EmeraldPrimary
+import com.ebsoft.shollu.ui.theme.NavyGold
+import com.ebsoft.shollu.ui.theme.NavyPrimary
 
 /**
  * Issue #20: the Glance widget follows the saved [ThemeMode] WITHOUT hosting theme logic and
  * WITHOUT MaterialExpressiveTheme (Glance composables are remote views — a Compose theme root
- * does not apply). All hexes mirror ui/theme/Color.kt tokens so the tile agrees with the app.
+ * does not apply). Palette values REFERENCE ui/theme/Color.kt tokens directly (not duplicated
+ * literals), so a retint of the app palette cannot silently leave the widget behind.
  *
- * Tile policy: the widget is a deep brand tile. With a LIGHT system theme it keeps the
- * mode's classic deep-primary tile + gold accent; with a DARK system theme it switches to the
- * dark scheme's surface background + dark-scheme accent (EMERALD -> DarkPrimary teal). NAVY
- * mirrors Theme.kt exactly: NAVY-dark resolves to the Emerald dark scheme. AMOLED is
- * invariant pure black. DYNAMIC falls back to Emerald: Glance cannot reach Material You
- * colors without MaterialTheme, which widgets must not use here.
+ * Tile policy: the widget is a deep brand tile rendered with DAY/NIGHT ColorProviders —
+ * Glance resolves the right half at render time, so a system dark-mode flip corrects itself
+ * without an APPWIDGET_UPDATE. Light keeps the mode's classic deep-primary tile + gold
+ * accent; night uses the dark scheme's surface background + dark-scheme accent (EMERALD ->
+ * DarkPrimary teal). NAVY mirrors Theme.kt exactly: NAVY-night resolves to the Emerald dark
+ * scheme. AMOLED is invariant pure black. DYNAMIC falls back to Emerald: Glance cannot reach
+ * Material You colors without MaterialTheme, which widgets must not use here.
  */
 data class WidgetPalette(
     val background: Color,
@@ -23,41 +33,37 @@ data class WidgetPalette(
     val mutedText: Color
 )
 
-private val EmeraldTile = WidgetPalette(
-    background = Color(0xFF0D6A53),   // EmeraldPrimary
-    accent = Color(0xFFD4AF37),       // EmeraldGold
-    onBackground = Color(0xFFFFFFFF),
-    secondaryText = Color(0xFFE0E0E0),
-    mutedText = Color(0xFFB0BEC5)
+/** Both system appearances for one [ThemeMode]; consumed as day/night ColorProviders. */
+data class WidgetDayNightPalette(
+    val light: WidgetPalette,
+    val night: WidgetPalette
 )
 
-private val EmeraldDarkTile = WidgetPalette(
-    background = Color(0xFF111413),   // DarkBackground
-    accent = Color(0xFF85D6B9),       // DarkPrimary
-    onBackground = Color(0xFFFFFFFF),
-    secondaryText = Color(0xFFE0E0E0),
-    mutedText = Color(0xFFB0BEC5)
+// Neutral text roles have no ui/theme token (they are widget-rendering constants, not scheme
+// roles), so they stay literal here — shared by every palette row.
+private val White = Color(0xFFFFFFFF)
+private val SecondaryTextGray = Color(0xFFE0E0E0)
+private val MutedTextGray = Color(0xFFB0BEC5)
+
+private fun tile(background: Color, accent: Color, onBackground: Color = White) = WidgetPalette(
+    background = background,
+    accent = accent,
+    onBackground = onBackground,
+    secondaryText = SecondaryTextGray,
+    mutedText = MutedTextGray
 )
 
-private val NavyTile = WidgetPalette(
-    background = Color(0xFF1B3B6F),   // NavyPrimary
-    accent = Color(0xFFE5B800),       // NavyGold
-    onBackground = Color(0xFFFFFFFF),
-    secondaryText = Color(0xFFE0E0E0),
-    mutedText = Color(0xFFB0BEC5)
-)
+private val EmeraldTile = tile(EmeraldPrimary, EmeraldGold)
+private val EmeraldDarkTile = tile(DarkBackground, DarkPrimary)
+private val NavyTile = tile(NavyPrimary, NavyGold)
+private val AmoledTile = tile(AmoledBackground, AmoledAccentGold)
 
-private val AmoledTile = WidgetPalette(
-    background = Color(0xFF000000),   // AmoledBackground
-    accent = Color(0xFFFFD54F),       // AmoledAccentGold
-    onBackground = Color(0xFFFFFFFF), // white: keeps the 3-level hierarchy vs secondaryText
-    secondaryText = Color(0xFFE0E0E0),
-    mutedText = Color(0xFFB0BEC5)
-)
-
-/** Pure (ThemeMode, system-dark) -> widget palette mapping — the widget's TDD seam. */
-fun widgetPalette(mode: ThemeMode, dark: Boolean): WidgetPalette = when (mode) {
-    ThemeMode.EMERALD, ThemeMode.DYNAMIC -> if (dark) EmeraldDarkTile else EmeraldTile
-    ThemeMode.NAVY -> if (dark) EmeraldDarkTile else NavyTile
-    ThemeMode.AMOLED -> AmoledTile
+/**
+ * Pure (ThemeMode) -> day/night widget palettes — the widget's TDD seam. Tests pin the
+ * resolved hexes so any token retint forces a conscious widget-update decision.
+ */
+fun widgetDayNightPalette(mode: ThemeMode): WidgetDayNightPalette = when (mode) {
+    ThemeMode.EMERALD, ThemeMode.DYNAMIC -> WidgetDayNightPalette(EmeraldTile, EmeraldDarkTile)
+    ThemeMode.NAVY -> WidgetDayNightPalette(NavyTile, EmeraldDarkTile)
+    ThemeMode.AMOLED -> WidgetDayNightPalette(AmoledTile, AmoledTile)
 }

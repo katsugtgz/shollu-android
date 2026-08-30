@@ -15,7 +15,7 @@ data class QuickAction(
 )
 
 /** The fixed quick-action strip of Home: Kiblat / Jadwal / Bagikan. */
-fun homeQuickActions(): List<QuickAction> = listOf(
+val homeQuickActions: List<QuickAction> = listOf(
     QuickAction(QuickActionId.QIBLA, "Kiblat"),
     QuickAction(QuickActionId.SCHEDULE, "Jadwal"),
     QuickAction(QuickActionId.SHARE, "Bagikan")

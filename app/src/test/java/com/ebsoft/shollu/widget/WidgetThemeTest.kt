@@ -7,96 +7,88 @@ import org.junit.Test
 
 /**
  * Issue #20 seam: the Glance widget's accents must follow the saved ThemeMode via a PURE
- * (ThemeMode, dark) -> palette mapping — the widget itself may not host theme logic.
+ * (ThemeMode) -> day/night palette mapping — the widget itself may not host theme logic, and
+ * colors resolve at render time so a system dark-mode flip self-corrects.
  *
- * Expected values are literal hexes worked out from ui/theme/Color.kt tokens (not recomputed
- * from the implementation): the tile mirrors the app's scheme — light system theme keeps the
- * classic deep-brand tile, dark system theme switches to the dark-scheme surface + accent,
- * NAVY-dark intentionally mirrors Theme.kt (NAVY dark falls back to the Emerald dark scheme),
- * AMOLED is invariant pure black, and DYNAMIC falls back to Emerald (Glance cannot reach
- * Material You without MaterialTheme, which widgets must not use here).
+ * Expected values are LITERAL hexes (not the ui/theme/Color.kt tokens the implementation
+ * references): production references the shared tokens so a retint there propagates, which
+ * means these literals are the drift alarm — a token retint fails here until someone
+ * consciously confirms the widget tile should follow it.
  */
 class WidgetThemeTest {
 
+    // Long literals -> toInt(): keeps the 0xFF______ spelling while hitting Color's ARGB-int
+    // overload, exactly how the production palettes are constructed.
+    private fun argb(v: Long) = Color(v.toInt())
+
     private fun assertPalette(
         actual: WidgetPalette,
-        background: Color,
-        accent: Color,
-        onBackground: Color,
-        secondaryText: Color,
-        mutedText: Color
+        background: Long,
+        accent: Long,
+        onBackground: Long = 0xFFFFFFFF,
+        secondaryText: Long = 0xFFE0E0E0,
+        mutedText: Long = 0xFFB0BEC5
     ) {
-        assertEquals("background", background, actual.background)
-        assertEquals("accent", accent, actual.accent)
-        assertEquals("onBackground", onBackground, actual.onBackground)
-        assertEquals("secondaryText", secondaryText, actual.secondaryText)
-        assertEquals("mutedText", mutedText, actual.mutedText)
+        assertEquals("background", argb(background), actual.background)
+        assertEquals("accent", argb(accent), actual.accent)
+        assertEquals("onBackground", argb(onBackground), actual.onBackground)
+        assertEquals("secondaryText", argb(secondaryText), actual.secondaryText)
+        assertEquals("mutedText", argb(mutedText), actual.mutedText)
     }
 
     @Test
-    fun emeraldLightKeepsClassicDeepTile() {
+    fun testEmeraldLightKeepsClassicDeepTile() {
         assertPalette(
-            widgetPalette(ThemeMode.EMERALD, dark = false),
-            background = Color(0xFF0D6A53),   // EmeraldPrimary tile
-            accent = Color(0xFFD4AF37),       // EmeraldGold
-            onBackground = Color(0xFFFFFFFF),
-            secondaryText = Color(0xFFE0E0E0),
-            mutedText = Color(0xFFB0BEC5)
+            widgetDayNightPalette(ThemeMode.EMERALD).light,
+            background = 0xFF0D6A53,   // EmeraldPrimary tile
+            accent = 0xFFD4AF37        // EmeraldGold
         )
     }
 
     @Test
-    fun emeraldDarkSwitchesToDarkSchemeSurfaceAndAccent() {
+    fun testEmeraldNightSwitchesToDarkSchemeSurfaceAndAccent() {
         assertPalette(
-            widgetPalette(ThemeMode.EMERALD, dark = true),
-            background = Color(0xFF111413),   // DarkBackground
-            accent = Color(0xFF85D6B9),       // DarkPrimary
-            onBackground = Color(0xFFFFFFFF),
-            secondaryText = Color(0xFFE0E0E0),
-            mutedText = Color(0xFFB0BEC5)
+            widgetDayNightPalette(ThemeMode.EMERALD).night,
+            background = 0xFF111413,   // DarkBackground
+            accent = 0xFF85D6B9        // DarkPrimary
         )
     }
 
     @Test
-    fun navyLightUsesNavyTileAndNavyGold() {
+    fun testNavyLightUsesNavyTileAndNavyGold() {
         assertPalette(
-            widgetPalette(ThemeMode.NAVY, dark = false),
-            background = Color(0xFF1B3B6F),   // NavyPrimary
-            accent = Color(0xFFE5B800),       // NavyGold
-            onBackground = Color(0xFFFFFFFF),
-            secondaryText = Color(0xFFE0E0E0),
-            mutedText = Color(0xFFB0BEC5)
+            widgetDayNightPalette(ThemeMode.NAVY).light,
+            background = 0xFF1B3B6F,   // NavyPrimary
+            accent = 0xFFE5B800        // NavyGold
         )
     }
 
     @Test
-    fun navyDarkMirrorsThemeDotKtEmeraldDarkFallback() {
+    fun testNavyNightMirrorsThemeDotKtEmeraldDarkFallback() {
         // Theme.kt: NAVY dark resolves to EmeraldDarkColorScheme — widget must agree.
         assertEquals(
-            widgetPalette(ThemeMode.EMERALD, dark = true),
-            widgetPalette(ThemeMode.NAVY, dark = true)
+            widgetDayNightPalette(ThemeMode.EMERALD).night,
+            widgetDayNightPalette(ThemeMode.NAVY).night
         )
     }
 
     @Test
-    fun amoledIsInvariantPureBlackRegardlessOfSystemTheme() {
-        val light = widgetPalette(ThemeMode.AMOLED, dark = false)
-        val dark = widgetPalette(ThemeMode.AMOLED, dark = true)
-        assertEquals(light, dark)
+    fun testAmoledIsInvariantPureBlackRegardlessOfSystemTheme() {
+        val dayNight = widgetDayNightPalette(ThemeMode.AMOLED)
+        assertEquals(dayNight.light, dayNight.night)
         assertPalette(
-            dark,
-            background = Color(0xFF000000),   // AmoledBackground
-            accent = Color(0xFFFFD54F),       // AmoledAccentGold
-            onBackground = Color(0xFFFFFFFF), // white: distinct from secondaryText
-            secondaryText = Color(0xFFE0E0E0),
-            mutedText = Color(0xFFB0BEC5)
+            dayNight.night,
+            background = 0xFF000000,   // AmoledBackground
+            accent = 0xFFFFD54F,       // AmoledAccentGold
+            onBackground = 0xFFFFFFFF, // white: distinct from secondaryText
+            secondaryText = 0xFFE0E0E0,
+            mutedText = 0xFFB0BEC5
         )
     }
 
     @Test
-    fun dynamicFallsBackToEmeraldPalette() {
+    fun testDynamicFallsBackToEmeraldPalette() {
         // Glance cannot bridge Material You without MaterialTheme — documented Emerald fallback.
-        assertEquals(widgetPalette(ThemeMode.EMERALD, dark = false), widgetPalette(ThemeMode.DYNAMIC, dark = false))
-        assertEquals(widgetPalette(ThemeMode.EMERALD, dark = true), widgetPalette(ThemeMode.DYNAMIC, dark = true))
+        assertEquals(widgetDayNightPalette(ThemeMode.EMERALD), widgetDayNightPalette(ThemeMode.DYNAMIC))
     }
 }

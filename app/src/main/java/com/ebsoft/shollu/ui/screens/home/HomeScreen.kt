@@ -153,16 +153,16 @@ fun HomeScreen(
         }
 
         // 2. Quick Actions — Material3 ButtonGroup of ONE-SHOT clickable items (issue #16).
-        // The descriptor model (QuickAction, checked=false everywhere) plus clickableItem —
-        // NOT toggleableItem — means no action ever renders selected/checked, Bagikan
-        // included. Icons are decorative: the label param supplies the accessible name.
+        // clickableItem — NOT toggleableItem — means no action ever renders selected/checked,
+        // Bagikan included (a share is an action, not a mode). Icons are decorative: the
+        // label param supplies the accessible name.
         item {
             ButtonGroup(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 overflowIndicator = { menuState -> ButtonGroupDefaults.OverflowIndicator(menuState) }
             ) {
-                homeQuickActions().forEach { action ->
+                homeQuickActions.forEach { action ->
                     clickableItem(
                         onClick = {
                             when (action.id) {

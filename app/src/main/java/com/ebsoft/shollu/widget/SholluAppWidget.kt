@@ -2,6 +2,7 @@ package com.ebsoft.shollu.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.*
@@ -28,6 +29,10 @@ import kotlinx.coroutines.flow.first
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
+
+/** Glance resolves the system dark mode at render time between the day and night colors. */
+private fun dayNight(day: Color, night: Color) = androidx.glance.color.ColorProvider(day, night)
+
 class SholluAppWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -40,12 +45,11 @@ class SholluAppWidget : GlanceAppWidget() {
         val ihtiyat = preferences.ihtiyatMinutes.first()
         val offsets = preferences.customOffsets.first()
         // Issue #20: accents follow the saved ThemeMode via the pure WidgetTheme mapping.
-        // The widget stays self-contained and does NOT host a Compose theme root.
+        // The widget stays self-contained and does NOT host a Compose theme root. Colors are
+        // DAY/NIGHT ColorProviders — Glance resolves the system appearance at render time, so
+        // a dark-mode flip self-corrects without waiting for the next APPWIDGET_UPDATE.
         val themeMode = preferences.themeMode.first()
-        val dark = (context.resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val palette = widgetPalette(themeMode, dark)
+        val palette = widgetDayNightPalette(themeMode)
 
         // City-frame now/today: the tile must show the CITY's calendar date and next prayer
         // even when the device zone differs (same helper the alarm pipeline uses).
@@ -73,7 +77,7 @@ class SholluAppWidget : GlanceAppWidget() {
 
     @Composable
     private fun WidgetContent(
-        palette: WidgetPalette,
+        palette: WidgetDayNightPalette,
         cityName: String,
         nextPrayerType: PrayerType,
         nextPrayerTime: LocalTime,
@@ -85,7 +89,7 @@ class SholluAppWidget : GlanceAppWidget() {
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .background(ColorProvider(palette.background))
+                .background(dayNight(palette.light.background, palette.night.background))
                 .cornerRadius(16.dp)
                 .padding(12.dp)
                 .clickable(actionStartActivity<MainActivity>())
@@ -100,7 +104,7 @@ class SholluAppWidget : GlanceAppWidget() {
                     Text(
                         text = "SHOLLU",
                         style = TextStyle(
-                            color = ColorProvider(palette.accent),
+                            color = dayNight(palette.light.accent, palette.night.accent),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -109,7 +113,7 @@ class SholluAppWidget : GlanceAppWidget() {
                     Text(
                         text = "• $cityName",
                         style = TextStyle(
-                            color = ColorProvider(palette.onBackground),
+                            color = dayNight(palette.light.onBackground, palette.night.onBackground),
                             fontSize = 11.sp
                         )
                     )
@@ -126,7 +130,7 @@ class SholluAppWidget : GlanceAppWidget() {
                         Text(
                             text = if (nextPrayerIsTomorrow) "Menuju $prayerName (Besok)" else "Menuju $prayerName",
                             style = TextStyle(
-                                color = ColorProvider(palette.secondaryText),
+                                color = dayNight(palette.light.secondaryText, palette.night.secondaryText),
                                 fontSize = 13.sp
                             )
                         )
@@ -134,7 +138,7 @@ class SholluAppWidget : GlanceAppWidget() {
                     Text(
                         text = nextPrayerTime.format(DateTimeFormatter.ofPattern("HH:mm")),
                         style = TextStyle(
-                            color = ColorProvider(palette.accent),
+                            color = dayNight(palette.light.accent, palette.night.accent),
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -163,15 +167,15 @@ class SholluAppWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun PrayerMiniItem(palette: WidgetPalette, label: String, time: String) {
+    private fun PrayerMiniItem(palette: WidgetDayNightPalette, label: String, time: String) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = label,
-                style = TextStyle(color = ColorProvider(palette.mutedText), fontSize = 9.sp)
+                style = TextStyle(color = dayNight(palette.light.mutedText, palette.night.mutedText), fontSize = 9.sp)
             )
             Text(
                 text = time,
-                style = TextStyle(color = ColorProvider(palette.onBackground), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                style = TextStyle(color = dayNight(palette.light.onBackground, palette.night.onBackground), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             )
         }
     }

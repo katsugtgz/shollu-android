@@ -40,6 +40,7 @@ class SettingsActionsTest {
 
     private class Harness {
         var overlayGranted = true
+        var failNextWrite = false
 
         val recorder = Recorder()
         val prefs = FakePrefs()
@@ -80,6 +81,7 @@ class SettingsActionsTest {
                 }
 
                 override suspend fun setOngoingNotificationEnabled(enabled: Boolean) {
+                    if (failNextWrite) throw IllegalStateException("DataStore I/O failed")
                     prefs.ongoingEnabled = enabled
                     recorder.write("ongoing=$enabled")
                 }
@@ -97,7 +99,7 @@ class SettingsActionsTest {
     // ---- Metode Hisab: write + reschedule + widget (widget refresh is NEW in #18) ----
 
     @Test
-    fun methodChangeWritesReschedulesAndRefreshesWidget() = runTest {
+    fun testMethodChangeWritesReschedulesAndRefreshesWidget() = runTest {
         val h = Harness()
         h.actions.setCalculationMethod(CalculationMethod.EGYPTIAN)
         assertEquals(CalculationMethod.EGYPTIAN, h.prefs.calculationMethod)
@@ -107,7 +109,7 @@ class SettingsActionsTest {
     // ---- Ihtiyat stepper: clamped 0..10, write + reschedule + widget (widget is NEW) ----
 
     @Test
-    fun ihtiyatIncrementWritesClampedValueAndReschedulesAndRefreshesWidget() = runTest {
+    fun testIhtiyatIncrementWritesClampedValueAndReschedulesAndRefreshesWidget() = runTest {
         val h = Harness()
         h.prefs.ihtiyatMinutes = 7
         h.actions.changeIhtiyat(delta = +1)
@@ -116,7 +118,7 @@ class SettingsActionsTest {
     }
 
     @Test
-    fun ihtiyatClampsAtZero() = runTest {
+    fun testIhtiyatClampsAtZero() = runTest {
         val h = Harness()
         h.prefs.ihtiyatMinutes = 0
         h.actions.changeIhtiyat(delta = -1)
@@ -124,7 +126,7 @@ class SettingsActionsTest {
     }
 
     @Test
-    fun ihtiyatClampsAtTen() = runTest {
+    fun testIhtiyatClampsAtTen() = runTest {
         val h = Harness()
         h.prefs.ihtiyatMinutes = 10
         h.actions.changeIhtiyat(delta = +1)
@@ -132,7 +134,7 @@ class SettingsActionsTest {
     }
 
     @Test
-    fun rapidTapsAccumulateBecauseEachTapRereadsThePersistedValue() = runTest {
+    fun testRapidTapsAccumulateBecauseEachTapRereadsThePersistedValue() = runTest {
         // Regression (cubic round 1): taps landing before the preference Flow re-emits must
         // still accumulate — each call re-reads the persisted value instead of trusting a
         // stale composition snapshot that would collapse -1 -1 into a single -1.
@@ -150,7 +152,7 @@ class SettingsActionsTest {
     // ---- Hijri adjustment stepper: clamped -2..2, write ONLY ----
 
     @Test
-    fun hijriAdjustmentWritesOnly_noRescheduleNoWidget() = runTest {
+    fun testHijriAdjustmentWritesOnlyNoRescheduleNoWidget() = runTest {
         val h = Harness()
         h.prefs.hijriAdjustment = 0
         h.actions.changeHijriAdjustment(delta = +1)
@@ -159,7 +161,7 @@ class SettingsActionsTest {
     }
 
     @Test
-    fun hijriAdjustmentClampsAtMinusTwoAndTwo() = runTest {
+    fun testHijriAdjustmentClampsAtMinusTwoAndTwo() = runTest {
         val h = Harness()
         h.prefs.hijriAdjustment = -2
         h.actions.changeHijriAdjustment(delta = -1)
@@ -172,7 +174,7 @@ class SettingsActionsTest {
     // ---- Pre-prayer alert: write + reschedule, NO widget ----
 
     @Test
-    fun prePrayerToggleWritesAndReschedules_noWidgetRefresh() = runTest {
+    fun testPrePrayerToggleWritesAndReschedulesNoWidgetRefresh() = runTest {
         val h = Harness()
         h.actions.setPrePrayerAlert(enabled = true, minutes = 10)
         assertEquals(true, h.prefs.prePrayerEnabled)
@@ -183,7 +185,7 @@ class SettingsActionsTest {
     // ---- Max vibration: write ONLY ----
 
     @Test
-    fun maxVibrationWritesOnly() = runTest {
+    fun testMaxVibrationWritesOnly() = runTest {
         val h = Harness()
         h.actions.setMaxVibration(true)
         assertEquals(true, h.prefs.maxVibration)
@@ -193,7 +195,7 @@ class SettingsActionsTest {
     // ---- ThemeMode: write + widget refresh (tile colors; NEW), NO reschedule ----
 
     @Test
-    fun themeModeWritesAndRefreshesWidget_noReschedule() = runTest {
+    fun testThemeModeWritesAndRefreshesWidgetNoReschedule() = runTest {
         val h = Harness()
         h.actions.setThemeMode(ThemeMode.AMOLED)
         assertEquals(ThemeMode.AMOLED, h.prefs.themeMode)
@@ -203,7 +205,7 @@ class SettingsActionsTest {
     // ---- Ongoing notification: write + service start/stop, NO reschedule, NO widget ----
 
     @Test
-    fun ongoingEnabledWritesThenStartsService() = runTest {
+    fun testOngoingEnabledWritesThenStartsService() = runTest {
         val h = Harness()
         h.actions.setOngoingNotification(true)
         assertEquals(true, h.prefs.ongoingEnabled)
@@ -211,17 +213,30 @@ class SettingsActionsTest {
     }
 
     @Test
-    fun ongoingDisabledWritesThenStopsService() = runTest {
+    fun testOngoingDisabledWritesThenStopsService() = runTest {
         val h = Harness()
         h.actions.setOngoingNotification(false)
         assertEquals(false, h.prefs.ongoingEnabled)
         assertEquals(listOf("write:ongoing=false", "service:ongoing=false"), h.recorder.events)
     }
 
+    @Test
+    fun testOngoingServiceDispatchSurvivesAFailedWrite() = runTest {
+        // Regression (/code-review max): the service intent is the ONLY kill path for the
+        // unswipeable foreground notification — a throwing DataStore write must not skip it.
+        val h = Harness()
+        h.failNextWrite = true
+        try {
+            h.actions.setOngoingNotification(false)
+        } catch (expected: IllegalStateException) {
+        }
+        assertEquals(listOf("service:ongoing=false"), h.recorder.events)
+    }
+
     // ---- Tes getar: NO write at all ----
 
     @Test
-    fun vibrationTestStartsServiceWithoutAnyWrite() = runTest {
+    fun testVibrationTestStartsServiceWithoutAnyWrite() = runTest {
         val h = Harness()
         h.actions.runVibrationTest()
         assertEquals(listOf("service:vibrationTest"), h.recorder.events)
@@ -232,7 +247,7 @@ class SettingsActionsTest {
     // ---- Floating dropzone: overlay-permission gate, then start/stop; NO write ----
 
     @Test
-    fun dropzoneWithoutOverlayPermissionRequestsPermissionOnly() = runTest {
+    fun testDropzoneWithoutOverlayPermissionRequestsPermissionOnly() = runTest {
         val h = Harness()
         h.overlayGranted = false
         h.actions.toggleDropzone(start = true)
@@ -240,7 +255,7 @@ class SettingsActionsTest {
     }
 
     @Test
-    fun dropzoneStopNeverNeedsOverlayPermission() = runTest {
+    fun testDropzoneStopNeverNeedsOverlayPermission() = runTest {
         // Regression (cubic round 1): a permission revoked while the dropzone runs must not
         // trap the service on — stopping is always allowed.
         val h = Harness()
@@ -250,7 +265,7 @@ class SettingsActionsTest {
     }
 
     @Test
-    fun dropzoneWithPermissionStartsAndStopsServiceWithoutWrite() = runTest {
+    fun testDropzoneWithPermissionStartsAndStopsServiceWithoutWrite() = runTest {
         val h = Harness()
         h.actions.toggleDropzone(start = true)
         assertTrue(h.recorder.events.contains("service:dropzone=true"))

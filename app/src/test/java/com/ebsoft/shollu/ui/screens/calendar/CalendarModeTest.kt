@@ -11,7 +11,7 @@ import org.junit.Test
 class CalendarModeTest {
 
     @Test
-    fun hasExactlyThreeModesWithStableLabels() {
+    fun testHasExactlyThreeModesWithStableLabels() {
         val modes = CalendarMode.entries
         assertEquals(3, modes.size)
         assertEquals("Jadwal Bulanan", CalendarMode.MONTHLY.label)
@@ -20,12 +20,12 @@ class CalendarModeTest {
     }
 
     @Test
-    fun entryModeIsMonthly() {
+    fun testEntryModeIsMonthly() {
         assertEquals(CalendarMode.MONTHLY, CalendarModeSelector().selected)
     }
 
     @Test
-    fun selectionFollowsTheLastChosenMode() {
+    fun testSelectionFollowsTheLastChosenMode() {
         val selector = CalendarModeSelector()
         selector.select(CalendarMode.CONVERTER)
         assertEquals(CalendarMode.CONVERTER, selector.selected)
@@ -36,14 +36,14 @@ class CalendarModeTest {
     }
 
     @Test
-    fun reselectingTheSelectedModeNeverDeselects() {
+    fun testReselectingTheSelectedModeNeverDeselects() {
         val selector = CalendarModeSelector(initial = CalendarMode.EVENTS)
         selector.select(CalendarMode.EVENTS)
         assertEquals(CalendarMode.EVENTS, selector.selected)
     }
 
     @Test
-    fun everyModeIsReachableInDeclaredOrder() {
+    fun testEveryModeIsReachableInDeclaredOrder() {
         val ordered = CalendarMode.entries.toList()
         assertEquals(listOf(CalendarMode.MONTHLY, CalendarMode.CONVERTER, CalendarMode.EVENTS), ordered)
     }

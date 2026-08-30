@@ -34,3 +34,36 @@ val DarkSurface = Color(0xFF191C1A)
 val DarkBackground = Color(0xFF111413)
 val DarkPrimary = Color(0xFF85D6B9)
 val DarkOnPrimary = Color(0xFF003829)
+
+// Gold-accent content color: dark amber for onTertiary wherever a scheme's tertiary is the
+// gold accent (Emerald/Navy light+dark, AMOLED). Without it the material3 baseline WHITE
+// onTertiary renders white-on-gold at ~2:1 contrast. Dynamic themes define their own.
+val GoldOnTertiary = Color(0xFF402D00)
+
+// Emerald container/surface roles the restyle consumes (issue #16-#18) but the schemes
+// historically left at material3 baseline (lavender-grey).
+val EmeraldSecondaryContainer = Color(0xFFBCEADB)
+val EmeraldOnSecondaryContainer = Color(0xFF002019)
+val EmeraldSurfaceContainerLow = Color(0xFFF4F8F5)
+val EmeraldOutlineVariant = Color(0xFFDBE5DE)
+
+// Dark-theme container/surface roles (Emerald dark + its NAVY-dark fallback).
+val DarkOnPrimaryContainer = Color(0xFFA3F2D4)
+val DarkSecondaryContainer = Color(0xFF3B4A42)
+val DarkOnSecondaryContainer = Color(0xFFBCEADB)
+val DarkSurfaceContainerLow = Color(0xFF171B19)
+val DarkOutlineVariant = Color(0xFF3F493F)
+
+// Royal Navy container/surface roles (light).
+val NavySecondaryContainer = Color(0xFFD9E2F5)
+val NavyOnSecondaryContainer = Color(0xFF101C33)
+val NavyOnPrimaryContainer = Color(0xFF0A1E3C)
+val NavySurfaceContainerLow = Color(0xFFF5F7FA)
+val NavyOutlineVariant = Color(0xFFD9E0E8)
+
+// Midnight AMOLED container/surface roles.
+val AmoledOnPrimaryContainer = Color(0xFF80CBC4)
+val AmoledSecondaryContainer = Color(0xFF1C2B26)
+val AmoledOnSecondaryContainer = Color(0xFF80CBC4)
+val AmoledSurfaceContainerLow = Color(0xFF0F1211)
+val AmoledOutlineVariant = Color(0xFF24302B)

@@ -29,7 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.ThemeMode
-import com.ebsoft.shollu.data.preferences.SholluPreferences
+import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.theme.SholluTheme
@@ -53,9 +53,11 @@ class FullscreenAlarmActivity : ComponentActivity() {
         val timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
         // Saved ThemeMode (issue #20): the alarm must match the app's theme the user picked,
         // not a hardcoded default. Read synchronously — a collect-with-default would flash the
-        // Emerald scheme over the lockscreen before the saved mode lands.
+        // Emerald scheme over the lockscreen before the saved mode lands. Uses the
+        // application-scoped singleton (not a fresh SholluPreferences) so the DataStore
+        // instance — and any warm file cache — is the one the rest of the app already used.
         val themeMode: ThemeMode = runBlocking(Dispatchers.IO) {
-            SholluPreferences(this@FullscreenAlarmActivity).themeMode.first()
+            (application as SholluApplication).preferences.themeMode.first()
         }
 
         setContent {

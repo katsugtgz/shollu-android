@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-27 JVM-only suites, 186 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
+27 JVM-only suites, 187 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
 
 ## WHERE TO LOOK
 

@@ -185,7 +185,9 @@ private fun ReminderItemCard(
                     Icon(
                         imageVector = if (isPreset) Icons.Default.Bookmark else Icons.Default.Alarm,
                         contentDescription = null,
-                        tint = if (reminder.isEnabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surface,
+                        // Disabled glyph needs an ON-role: surface is a background role and
+                        // disappears against the dark chip in dark/AMOLED themes.
+                        tint = if (reminder.isEnabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
                 }

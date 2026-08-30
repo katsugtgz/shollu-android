@@ -15,39 +15,62 @@ private val EmeraldLightColorScheme = lightColorScheme(
     onPrimaryContainer = EmeraldOnPrimaryContainer,
     secondary = EmeraldSecondary,
     onSecondary = EmeraldOnSecondary,
+    secondaryContainer = EmeraldSecondaryContainer,
+    onSecondaryContainer = EmeraldOnSecondaryContainer,
     tertiary = EmeraldGold,
+    onTertiary = GoldOnTertiary,
     background = EmeraldBackground,
     surface = EmeraldSurface,
-    surfaceVariant = EmeraldSurfaceVariant
+    surfaceVariant = EmeraldSurfaceVariant,
+    surfaceContainerLow = EmeraldSurfaceContainerLow,
+    outlineVariant = EmeraldOutlineVariant
 )
 
 private val EmeraldDarkColorScheme = darkColorScheme(
     primary = DarkPrimary,
     onPrimary = DarkOnPrimary,
     primaryContainer = EmeraldPrimary,
+    onPrimaryContainer = DarkOnPrimaryContainer,
     secondary = EmeraldSecondary,
+    secondaryContainer = DarkSecondaryContainer,
+    onSecondaryContainer = DarkOnSecondaryContainer,
     tertiary = EmeraldGold,
+    onTertiary = GoldOnTertiary,
     background = DarkBackground,
-    surface = DarkSurface
+    surface = DarkSurface,
+    surfaceContainerLow = DarkSurfaceContainerLow,
+    outlineVariant = DarkOutlineVariant
 )
 
 private val NavyLightColorScheme = lightColorScheme(
     primary = NavyPrimary,
     onPrimary = NavyOnPrimary,
     primaryContainer = NavyPrimaryContainer,
+    onPrimaryContainer = NavyOnPrimaryContainer,
     secondary = NavySecondary,
-    tertiary = NavyGold
+    secondaryContainer = NavySecondaryContainer,
+    onSecondaryContainer = NavyOnSecondaryContainer,
+    tertiary = NavyGold,
+    onTertiary = GoldOnTertiary,
+    surfaceContainerLow = NavySurfaceContainerLow,
+    outlineVariant = NavyOutlineVariant
 )
 
 private val AmoledDarkColorScheme = darkColorScheme(
     primary = AmoledPrimary,
     onPrimary = Color.Black,
     primaryContainer = Color(0xFF004D40),
+    onPrimaryContainer = AmoledOnPrimaryContainer,
     secondary = Color(0xFF80CBC4),
+    secondaryContainer = AmoledSecondaryContainer,
+    onSecondaryContainer = AmoledOnSecondaryContainer,
     tertiary = AmoledAccentGold,
+    onTertiary = GoldOnTertiary,
     background = AmoledBackground,
     surface = AmoledSurface,
-    surfaceVariant = AmoledSurfaceCard
+    surfaceVariant = AmoledSurfaceCard,
+    surfaceContainerLow = AmoledSurfaceContainerLow,
+    outlineVariant = AmoledOutlineVariant
 )
 
 /**

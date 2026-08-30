@@ -102,11 +102,16 @@ class SettingsActions(
 
     /**
      * Ongoing notification toggle: write FIRST, then start/stop the service — the service
-     * reads the preference when it comes up, so ordering matters.
+     * reads the preference when it comes up, so ordering matters. The service dispatch runs in
+     * [finally]: it is the ONLY kill path for the unswipeable foreground notification, so a
+     * failed/stalled write must never silently skip it.
      */
     suspend fun setOngoingNotification(enabled: Boolean) {
-        mutations.setOngoingNotificationEnabled(enabled)
-        startOngoingService(enabled)
+        try {
+            mutations.setOngoingNotificationEnabled(enabled)
+        } finally {
+            startOngoingService(enabled)
+        }
     }
 
     /** Tes getar: service intent only — never writes a preference. */

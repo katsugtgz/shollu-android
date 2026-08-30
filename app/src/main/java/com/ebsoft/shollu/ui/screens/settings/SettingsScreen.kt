@@ -490,8 +490,8 @@ private fun SettingsRow(
 }
 
 /**
- * Stepper row: icon + title + subtitle on the left, minus/plus buttons with >=48dp touch
- * targets around the value label on the right.
+ * Stepper row: reuses [SettingsRow]'s left half via its trailing slot — only the
+ * minus/value/plus controls (>=48dp touch targets) are stepper-specific.
  */
 @Composable
 private fun StepperRow(
@@ -502,49 +502,31 @@ private fun StepperRow(
     onDecrement: () -> Unit,
     onIncrement: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    SettingsRow(
+        icon = icon,
+        title = title,
+        subtitle = subtitle,
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onDecrement,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Kurang")
+                }
+                Text(
+                    text = valueText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.widthIn(min = 56.dp)
+                )
+                IconButton(
+                    onClick = onIncrement,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Tambah")
+                }
+            }
         }
-        IconButton(
-            onClick = onDecrement,
-            modifier = Modifier.size(48.dp)
-        ) {
-            Icon(Icons.Default.Remove, contentDescription = "Kurang")
-        }
-        Text(
-            text = valueText,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.widthIn(min = 56.dp)
-        )
-        IconButton(
-            onClick = onIncrement,
-            modifier = Modifier.size(48.dp)
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Tambah")
-        }
-    }
+    )
 }

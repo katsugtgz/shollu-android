@@ -13,8 +13,8 @@ import org.junit.Test
 class QuickActionsTest {
 
     @Test
-    fun threeQuickActionsInFixedOrder() {
-        val actions = homeQuickActions()
+    fun testThreeQuickActionsInFixedOrder() {
+        val actions = homeQuickActions
         assertEquals(
             listOf(QuickActionId.QIBLA, QuickActionId.SCHEDULE, QuickActionId.SHARE),
             actions.map { it.id }
@@ -22,10 +22,10 @@ class QuickActionsTest {
     }
 
     @Test
-    fun labelsKeepIndonesianCopy() {
+    fun testLabelsKeepIndonesianCopy() {
         assertEquals(
             listOf("Kiblat", "Jadwal", "Bagikan"),
-            homeQuickActions().map { it.label }
+            homeQuickActions.map { it.label }
         )
     }
 }

@@ -9,9 +9,6 @@ interface CityDao {
     @Query("SELECT * FROM cities ORDER BY country = 'Indonesia' DESC, name ASC")
     fun getAllCities(): Flow<List<CityEntity>>
 
-    @Query("SELECT * FROM cities WHERE name LIKE '%' || :query || '%' OR province LIKE '%' || :query || '%' ORDER BY name ASC")
-    fun searchCities(query: String): Flow<List<CityEntity>>
-
     @Query("SELECT * FROM cities WHERE id = :id LIMIT 1")
     suspend fun getCityById(id: Long): CityEntity?
 

@@ -42,26 +42,26 @@ class LocationPickerFilterTest {
     private fun names(cities: List<City>) = cities.map { it.name }
 
     @Test
-    fun blankQueryReturnsEveryCityInInputOrder() {
+    fun testBlankQueryReturnsEveryCityInInputOrder() {
         assertEquals(seed, filterCities(seed, ""))
         assertEquals(seed, filterCities(seed, "   "))
     }
 
     @Test
-    fun nameMatchIsCaseInsensitiveAndTrimmed() {
+    fun testNameMatchIsCaseInsensitiveAndTrimmed() {
         assertEquals(listOf("Bogor"), names(filterCities(seed, "bogor")))
         assertEquals(listOf("Bogor"), names(filterCities(seed, "  BOGOR  ")))
     }
 
     @Test
-    fun parentheticalAliasMatches() {
+    fun testParentheticalAliasMatches() {
         assertEquals(listOf("Surakarta (Solo)"), names(filterCities(seed, "solo")))
         assertEquals(listOf("Makkah (Mecca)"), names(filterCities(seed, "mecca")))
         assertEquals(listOf("Mataram (Lombok)"), names(filterCities(seed, "lombok")))
     }
 
     @Test
-    fun provinceMatchKeepsSeedOrder() {
+    fun testProvinceMatchKeepsSeedOrder() {
         // Banten in seed order: Serang (23), Tangerang (24), Tangerang Selatan (25)
         assertEquals(
             listOf("Serang", "Tangerang", "Tangerang Selatan"),
@@ -70,7 +70,7 @@ class LocationPickerFilterTest {
     }
 
     @Test
-    fun everyWhitespaceSeparatedTermMustMatch() {
+    fun testEveryWhitespaceSeparatedTermMustMatch() {
         // "tangerang" matches both cities, "selatan" only the second
         assertEquals(listOf("Tangerang Selatan"), names(filterCities(seed, "tangerang selatan")))
         // "jawa" + "barat" together = only Jawa Barat cities, in seed order
@@ -81,12 +81,12 @@ class LocationPickerFilterTest {
     }
 
     @Test
-    fun noMatchYieldsEmptyList() {
+    fun testNoMatchYieldsEmptyList() {
         assertEquals(emptyList<City>(), filterCities(seed, "zzz"))
     }
 
     @Test
-    fun matchesAreStableAcrossRepeatedFiltering() {
+    fun testMatchesAreStableAcrossRepeatedFiltering() {
         val once = filterCities(seed, "ta")
         val twice = filterCities(once, "ta")
         assertEquals(once, twice)

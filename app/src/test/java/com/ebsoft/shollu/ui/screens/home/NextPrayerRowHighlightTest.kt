@@ -30,13 +30,13 @@ class NextPrayerRowHighlightTest {
         Triple(type, LocalTime.of(hour, minute), LocalDateTime.of(date, LocalTime.of(hour, minute)))
 
     @Test
-    fun subuhRowIsHighlightedWhileSubuhIsNextToday() {
+    fun testSubuhRowIsHighlightedWhileSubuhIsNextToday() {
         val next = target(PrayerType.SUBUH, today, 4, 30)
         assertTrue(isNextPrayerRow(next, PrayerType.SUBUH, today))
     }
 
     @Test
-    fun onlyTheTargetRowIsHighlighted() {
+    fun testOnlyTheTargetRowIsHighlighted() {
         val next = target(PrayerType.SUBUH, today, 4, 30)
         for (row in PrayerType.entries) {
             assertEquals(
@@ -48,7 +48,7 @@ class NextPrayerRowHighlightTest {
     }
 
     @Test
-    fun noRowIsHighlightedOnceTargetRolledToTomorrow() {
+    fun testNoRowIsHighlightedOnceTargetRolledToTomorrow() {
         // After today's last valid major the target is TOMORROW's slot — highlighting today's
         // same-type row would wrongly say "Akan Datang" about a prayer that already passed.
         val next = target(PrayerType.SUBUH, tomorrow, 4, 30)
@@ -58,7 +58,7 @@ class NextPrayerRowHighlightTest {
     }
 
     @Test
-    fun noRowIsHighlightedWhileScheduleIsLoading() {
+    fun testNoRowIsHighlightedWhileScheduleIsLoading() {
         for (row in PrayerType.entries) {
             assertFalse(isNextPrayerRow(null, row, today))
         }
