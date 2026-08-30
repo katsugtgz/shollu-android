@@ -90,11 +90,10 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                         // reschedule cannot re-arm this one-shot after we disable it.
                         ReminderAlarmScheduler.disableFiredOnceReminder(context, reminder)
                     } else {
-                        // Recur in the CURRENT city's frame: the offset is re-read at fire time,
-                        // so reminders follow city changes — the same frame the Scheduler
-                        // screen labels the times with.
-                        val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
-                        ReminderAlarmScheduler.scheduleReminder(context, reminder, timezoneHours)
+                        // Recur in the CURRENT city's frame: the offset is re-read inside the
+                        // scheduler's lock at arm time, so reminders follow city changes — the
+                        // same frame the Scheduler screen labels the times with.
+                        ReminderAlarmScheduler.scheduleReminder(context, reminder)
                     }
                 }
             } catch (e: Exception) {

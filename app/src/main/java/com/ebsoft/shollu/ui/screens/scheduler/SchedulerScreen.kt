@@ -90,8 +90,7 @@ fun SchedulerScreen(
                                 try {
                                     com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(
                                         context,
-                                        updated,
-                                        selectedCity.timezone
+                                        updated
                                     )
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -140,8 +139,7 @@ fun SchedulerScreen(
                     try {
                         com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(
                             context,
-                            saved,
-                            selectedCity.timezone
+                            saved
                         )
                     } catch (e: Exception) {
                         e.printStackTrace()

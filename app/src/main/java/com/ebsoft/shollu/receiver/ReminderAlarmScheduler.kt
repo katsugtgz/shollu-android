@@ -122,7 +122,9 @@ object ReminderAlarmScheduler {
             val cityNow = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
             for (reminder in activeReminders) {
                 if (reschedulingAfterBoot && hasExpiredOnceReminder(reminder, cityNow)) {
-                    db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
+                    // Targeted column update: the entity may predate a concurrent user edit,
+                    // and a full-row @Update would clobber it.
+                    db.reminderDao().setReminderEnabled(reminder.id, false)
                     cancelReminderLocked(context, reminder.id)
                     continue
                 }
@@ -137,21 +139,28 @@ object ReminderAlarmScheduler {
      * Reminder wall times belong to the CITY's fixed offset — the same frame the Scheduler
      * screen labels them with ("Pukul 06:00 WIB"). Converting with [java.time.ZoneId.systemDefault]
      * would fire at a different instant than that label whenever the device zone differs
-     * from the city's; both "now" and the trigger conversion use the city frame.
+     * from the city's; both "now" and the trigger conversion use the city frame. The offset
+     * is read from preferences INSIDE the lock so a city change that wins the mutex first
+     * cannot be overwritten by this arming with a pre-read stale offset.
      */
-    suspend fun scheduleReminder(context: Context, reminder: ReminderEntity, timezoneHours: Double) {
-        rescheduleMutex.withLock { scheduleReminderLocked(context, reminder, timezoneHours) }
+    suspend fun scheduleReminder(context: Context, reminder: ReminderEntity) {
+        rescheduleMutex.withLock {
+            val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
+            scheduleReminderLocked(context, reminder, timezoneHours)
+        }
     }
 
     /**
      * Disable a one-shot reminder whose alarm just fired: cancels any (re-)armed alarm for it
      * and flips the DB row under the same lock the batch rescheduler uses, so a concurrent
      * city-change reschedule can never re-arm a reminder this is disabling (and vice versa).
+     * The disable is a targeted column update — the entity read before the lock may predate
+     * a concurrent user edit that a full-row @Update would clobber.
      */
     suspend fun disableFiredOnceReminder(context: Context, reminder: ReminderEntity) {
         rescheduleMutex.withLock {
             val db = SholluDatabase.getDatabase(context, CoroutineScope(Dispatchers.IO))
-            db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
+            db.reminderDao().setReminderEnabled(reminder.id, false)
             cancelReminderLocked(context, reminder.id)
         }
     }
