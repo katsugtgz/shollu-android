@@ -8,11 +8,12 @@ import android.os.Build
 import com.ebsoft.shollu.data.db.SholluDatabase
 import com.ebsoft.shollu.data.db.entity.DaysOfWeek
 import com.ebsoft.shollu.data.db.entity.ReminderEntity
+import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import java.time.LocalDateTime
-import java.time.ZoneId
 
 object ReminderAlarmScheduler {
 
@@ -102,33 +103,42 @@ object ReminderAlarmScheduler {
     suspend fun scheduleAllActiveReminders(context: Context, reschedulingAfterBoot: Boolean = false) {
         val db = SholluDatabase.getDatabase(context, CoroutineScope(Dispatchers.IO))
         val activeReminders = db.reminderDao().getActiveReminders()
+        // One preference read for the whole batch; the CITY's fixed offset decides both the
+        // ONCE-expiry check and every epoch conversion (city frame, never the device zone).
+        val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
+        val cityNow = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
         for (reminder in activeReminders) {
-            if (reschedulingAfterBoot && hasExpiredOnceReminder(reminder, LocalDateTime.now())) {
+            if (reschedulingAfterBoot && hasExpiredOnceReminder(reminder, cityNow)) {
                 db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
                 cancelReminder(context, reminder.id)
                 continue
             }
-            scheduleReminder(context, reminder)
+            scheduleReminder(context, reminder, timezoneHours)
         }
     }
 
     /**
      * Schedule a specific reminder with AlarmManager.
+     *
+     * Reminder wall times belong to the CITY's fixed offset — the same frame the Scheduler
+     * screen labels them with ("Pukul 06:00 WIB"). Converting with [java.time.ZoneId.systemDefault]
+     * would fire at a different instant than that label whenever the device zone differs
+     * from the city's; both "now" and the trigger conversion use the city frame.
      */
-    fun scheduleReminder(context: Context, reminder: ReminderEntity) {
+    fun scheduleReminder(context: Context, reminder: ReminderEntity, timezoneHours: Double) {
         if (!reminder.isEnabled) {
             cancelReminder(context, reminder.id)
             return
         }
 
-        val now = LocalDateTime.now()
+        val now = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
         val triggerDateTime = getNextTriggerDateTime(
             now = now,
             timeHour = reminder.timeHour,
             timeMinute = reminder.timeMinute,
             daysOfWeek = reminder.daysOfWeek
         )
-        val epochMillis = triggerDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val epochMillis = AlarmTime.epochMillisForCity(triggerDateTime, timezoneHours)
 
         val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
             action = ReminderAlarmReceiver.ACTION_REMINDER_ALARM

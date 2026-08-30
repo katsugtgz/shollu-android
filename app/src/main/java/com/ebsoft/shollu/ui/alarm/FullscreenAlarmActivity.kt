@@ -27,9 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.AlarmScheduler
-import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
@@ -43,14 +41,13 @@ class FullscreenAlarmActivity : ComponentActivity() {
 
         val prayerName = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_NAME) ?: "Sholat"
         val prayerTime = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_TIME) ?: ""
+        // Zone label of the city that ARMED this alarm (WIB/WITA/WIT/UTC±), fixed at arm time
+        // alongside prayerTime. Read synchronously from the intent — the CURRENT preference is
+        // wrong here: it can have changed after arming (and an async first read would briefly
+        // drop the label anyway).
+        val timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
 
         setContent {
-            // Prayer alarms are armed in the CITY's fixed offset — label the time line with
-            // the city's zone (WIB/WITA/WIT/UTC±), never a hardcoded WIB.
-            val app = application as SholluApplication
-            val city by app.preferences.selectedCity.collectAsState(initial = null)
-            val timezoneLabel = city?.let { AlarmTime.timezoneLabel(it.timezone) }
-
             SholluTheme {
                 FullscreenAlarmScreen(
                     prayerName = prayerName,

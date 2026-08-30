@@ -21,7 +21,6 @@ import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
-import kotlinx.coroutines.delay
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -30,25 +29,28 @@ fun NextPrayerHeroCard(
     timezoneHours: Double,
     cityName: String,
     hijriDateFormatted: String,
+    deviceEpochMillis: Long,
     onLocationClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // 1-second text tick for the HH:MM:SS countdown. Each tick re-derives the polar-aware
-    // target in the CITY's frame from the device epoch (AlarmTime.cityWallClockNow is a pure
-    // function of epoch + offset), so the countdown rolls over to the next slot within 1s of
-    // a prayer passing and stays correct when the device zone differs from the city.
-    var deviceEpochMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    // Per-second epoch reading owned by the CALLER (shared with the schedule list, so hero
+    // and list flip to the next prayer on the same beat). Each reading re-derives the
+    // polar-aware target in the CITY's frame (AlarmTime.cityWallClockNow is a pure function
+    // of epoch + offset), so the countdown rolls over to the next slot within 1s of a prayer
+    // passing and stays correct when the device zone differs from the city.
+    val cityNow = AlarmTime.cityWallClockNow(deviceEpochMillis, timezoneHours)
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            deviceEpochMillis = System.currentTimeMillis()
-            delay(1000L)
-        }
+    // Boundary guard: only a pair computed for THIS city date and its following date may be
+    // selected. Right after city-midnight the caller's schedule can still be yesterday's
+    // (until its recalculation lands) — selecting from it would show yesterday's times under
+    // today's date, so keep the honest loading state instead. Polar-invalid Subuh/Isya
+    // placeholders are already excluded by getNextPrayerTarget's valid-major filter.
+    val cityDate = cityNow.toLocalDate()
+    val datedSchedule = schedule?.takeIf { (today, tomorrow) ->
+        today.date == cityDate && tomorrow.date == cityDate.plusDays(1)
     }
-
-    // Null while today's times are not ready — honest empty/loading, never a fabricated slot.
-    val target = schedule?.let { (today, tomorrow) ->
-        today.getNextPrayerTarget(AlarmTime.cityWallClockNow(deviceEpochMillis, timezoneHours), tomorrow)
+    val target = datedSchedule?.let { (today, tomorrow) ->
+        today.getNextPrayerTarget(cityNow, tomorrow)
     }
     val totalSeconds = target?.let { (type, time, targetDateTime) ->
         AlarmTime.remainingSecondsUntilCityWall(
@@ -65,7 +67,12 @@ fun NextPrayerHeroCard(
     val countdownText = if (target != null) {
         String.format("%02d : %02d : %02d", hours, minutes, seconds)
     } else "-- : -- : --"
-    val prayerName = target?.first?.displayName ?: "Memuat jadwal…"
+    // After today's last valid major the target is TOMORROW's slot — say so, or the name and
+    // time read as today's prayer.
+    val targetIsTomorrow = target != null && target.third.toLocalDate() != cityNow.toLocalDate()
+    val prayerName = target?.first?.displayName?.let {
+        if (targetIsTomorrow) "$it (Besok)" else it
+    } ?: "Memuat jadwal…"
     val prayerTimeText = target?.second?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "--:--"
 
     Card(

@@ -194,8 +194,12 @@ object AlarmScheduler {
 
                 val intent = Intent(context, PrayerAlarmReceiver::class.java).apply {
                     action = ACTION_PRAYER_ALARM
-                    putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, type.name)
+                    putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, type.displayName)
                     putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, String.format("%02d:%02d", time.hour, time.minute))
+                    // Zone label of the city that armed this alarm — the fullscreen screen must
+                    // not re-derive it from the CURRENT preference (the user may have changed
+                    // city after arming; the time string above is the arming city's wall time).
+                    putExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL, AlarmTime.timezoneLabel(city.timezone))
                     putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
                 }
 
@@ -221,8 +225,9 @@ object AlarmScheduler {
 
                 val preIntent = Intent(context, PrayerAlarmReceiver::class.java).apply {
                     action = ACTION_PRE_PRAYER_ALARM
-                    putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, type.name)
+                    putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, type.displayName)
                     putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, String.format("%02d:%02d", time.hour, time.minute))
+                    putExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL, AlarmTime.timezoneLabel(city.timezone))
                     putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, true)
                 }
                 val prePendingIntent = PendingIntent.getBroadcast(
@@ -307,6 +312,7 @@ object AlarmScheduler {
             putExtra(EXTRA_SNOOZE_DELAY_MINUTES, delayMinutes)
             putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, prayerName)
             putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, prayerTime)
+            putExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL, AlarmTime.timezoneLabel(city.timezone))
             putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
         }
 

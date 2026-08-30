@@ -53,7 +53,13 @@ fun CalendarScreen(
     val cityToday = remember(dayTick, selectedCity.timezone) {
         AlarmTime.cityWallClockNow(timezoneHours = selectedCity.timezone).toLocalDate()
     }
-    var currentYearMonth by remember { mutableStateOf(YearMonth.from(cityToday)) }
+    // Re-follow the city frame when today's MONTH jumps (city change across a date line, or
+    // the 1st at midnight): a month-less key would keep the browsed month frozen while the
+    // "today" highlight silently leaves the visible month. Within-month date changes and
+    // manual browsing are unaffected.
+    var currentYearMonth by remember(YearMonth.from(cityToday)) {
+        mutableStateOf(YearMonth.from(cityToday))
+    }
 
     val monthlySchedule = remember(currentYearMonth, selectedCity, calculationMethod, asrJuristic, ihtiyatMinutes, customOffsets) {
         prayerRepository.getMonthlySchedule(
@@ -105,7 +111,11 @@ fun CalendarScreen(
                 onNextMonth = { currentYearMonth = currentYearMonth.plusMonths(1) },
                 onExport = { exportSchedule(context, selectedCity, currentYearMonth, monthlySchedule, appLocale) }
             )
-            1 -> DateConverterView(hijriAdjustment = hijriAdjustment, locale = appLocale)
+            1 -> DateConverterView(
+                selectedCity = selectedCity,
+                hijriAdjustment = hijriAdjustment,
+                locale = appLocale
+            )
             2 -> IslamicEventsView(hijriAdjustment = hijriAdjustment)
         }
     }
@@ -221,10 +231,13 @@ private fun MonthlyScheduleView(
 }
 
 @Composable
-private fun DateConverterView(hijriAdjustment: Int, locale: Locale) {
-    // Day tick keeps "Hari Ini" truthful across midnight.
+private fun DateConverterView(selectedCity: City, hijriAdjustment: Int, locale: Locale) {
+    // Day tick keeps "Hari Ini" truthful across midnight; the CITY frame keeps it matching
+    // the monthly tab's "today" highlight when the device zone differs from the city's.
     val dayTick = rememberTickMillis(intervalMillis = 60_000L)
-    var gregDate by remember(dayTick) { mutableStateOf(LocalDate.now()) }
+    var gregDate by remember(dayTick, selectedCity.timezone) {
+        mutableStateOf(AlarmTime.cityWallClockNow(timezoneHours = selectedCity.timezone).toLocalDate())
+    }
     var hijriResult by remember(gregDate, hijriAdjustment) {
         mutableStateOf(HijriCalendarHelper.gregorianToHijri(gregDate, hijriAdjustment))
     }

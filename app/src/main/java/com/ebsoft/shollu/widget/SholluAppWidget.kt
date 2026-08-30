@@ -48,14 +48,17 @@ class SholluAppWidget : GlanceAppWidget() {
         val prayerTimes = prayerRepository.calculateForDate(today, city, method, juristic, ihtiyat, offsets)
         val tomorrowTimes = prayerRepository.calculateForDate(today.plusDays(1), city, method, juristic, ihtiyat, offsets)
         // Polar-aware selector: skips invalid Subuh/Isya; after the last valid major today,
-        // targets tomorrow's first valid major.
-        val (nextType, nextTime, _) = prayerTimes.getNextPrayerTarget(now, tomorrowTimes)
+        // targets tomorrow's first valid major. That rollover target's date is TOMORROW's —
+        // surface it, or "Menuju Subuh 04:30" reads as today's slot next to today's row.
+        val (nextType, nextTime, nextTarget) = prayerTimes.getNextPrayerTarget(now, tomorrowTimes)
+        val nextIsTomorrow = nextTarget.toLocalDate() != today
 
         provideContent {
             WidgetContent(
                 cityName = city.name,
                 nextPrayerType = nextType,
                 nextPrayerTime = nextTime,
+                nextPrayerIsTomorrow = nextIsTomorrow,
                 prayerTimes = prayerTimes
             )
         }
@@ -66,6 +69,7 @@ class SholluAppWidget : GlanceAppWidget() {
         cityName: String,
         nextPrayerType: PrayerType,
         nextPrayerTime: LocalTime,
+        nextPrayerIsTomorrow: Boolean,
         prayerTimes: PrayerTimes
     ) {
         val prayerName = nextPrayerType.displayName
@@ -112,7 +116,7 @@ class SholluAppWidget : GlanceAppWidget() {
                 ) {
                     Column(modifier = GlanceModifier.defaultWeight()) {
                         Text(
-                            text = "Menuju $prayerName",
+                            text = if (nextPrayerIsTomorrow) "Menuju $prayerName (Besok)" else "Menuju $prayerName",
                             style = TextStyle(
                                 color = ColorProvider(Color(0xFFE0E0E0)),
                                 fontSize = 13.sp

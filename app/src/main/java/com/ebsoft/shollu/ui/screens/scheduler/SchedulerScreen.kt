@@ -88,7 +88,11 @@ fun SchedulerScreen(
                             reminderRepository.updateReminder(updated)
                             if (isChecked) {
                                 try {
-                                    com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(context, updated)
+                                    com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(
+                                        context,
+                                        updated,
+                                        selectedCity.timezone
+                                    )
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }
@@ -134,7 +138,11 @@ fun SchedulerScreen(
                     val id = reminderRepository.insertReminder(newReminder)
                     val saved = if (id > 0) newReminder.copy(id = id) else newReminder
                     try {
-                        com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(context, saved)
+                        com.ebsoft.shollu.receiver.ReminderAlarmScheduler.scheduleReminder(
+                            context,
+                            saved,
+                            selectedCity.timezone
+                        )
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }

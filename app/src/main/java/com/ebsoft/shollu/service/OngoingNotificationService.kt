@@ -121,9 +121,13 @@ class OngoingNotificationService : Service() {
                     val targetEpochMillis = AlarmTime.epochMillisForCity(targetDateTime, config.city.timezone)
                     val prayerDisplayName = nextPrayerType.displayName
                     val formattedPrayerTime = nextPrayerTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+                    // After today's last valid major the target is TOMORROW's slot — label it,
+                    // or the countdown reads as today's already-passed prayer.
+                    val targetIsTomorrow = targetDateTime.toLocalDate() != now.toLocalDate()
+                    val displayNameWithDay = if (targetIsTomorrow) "$prayerDisplayName Besok" else prayerDisplayName
 
                     updateNotification(
-                        title = "Menuju $prayerDisplayName ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",
+                        title = "Menuju $displayNameWithDay ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",
                         content = "${config.city.name} • Shollu Pengingat Sholat",
                         subText = "Hitung Mundur Sholat",
                         targetEpochMillis = targetEpochMillis

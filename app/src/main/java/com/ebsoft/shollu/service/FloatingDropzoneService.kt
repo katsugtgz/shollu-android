@@ -204,7 +204,10 @@ class FloatingDropzoneService : Service() {
                 val s = totalSeconds % 60
                 val h = totalSeconds / 3600
 
-                val prayerName = effectiveTargetType.displayName
+                // After today's last valid major the target is TOMORROW's slot — label it so
+                // the pill cannot be read as today's prayer.
+                val targetIsTomorrow = targetDateTime.toLocalDate() != today
+                val prayerName = effectiveTargetType.displayName + if (targetIsTomorrow) " Besok" else ""
 
                 textView.text = String.format("%s %02d:%02d (%02d:%02d:%02d)", prayerName, effectiveTargetTime.hour, effectiveTargetTime.minute, h, m, s)
                 delay(1000L)

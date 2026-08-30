@@ -10,10 +10,12 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.ebsoft.shollu.R
+import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class ReminderAlarmReceiver : BroadcastReceiver() {
@@ -86,7 +88,9 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                     if (reminder.daysOfWeek.isOnce) {
                         db.reminderDao().updateReminder(reminder.copy(isEnabled = false))
                     } else {
-                        ReminderAlarmScheduler.scheduleReminder(context, reminder)
+                        // Recur in the CITY's frame — the same offset the reminder was armed with.
+                        val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
+                        ReminderAlarmScheduler.scheduleReminder(context, reminder, timezoneHours)
                     }
                 }
             } catch (e: Exception) {
