@@ -32,7 +32,6 @@ import com.ebsoft.shollu.service.OngoingNotificationService
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.widget.updateSholluWidgets
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -74,11 +73,11 @@ fun SettingsScreen(
                 override suspend fun updateCalculationMethod(method: CalculationMethod) =
                     preferences.updateCalculationMethod(method)
 
-                override suspend fun updateIhtiyatMinutes(minutes: Int) =
-                    preferences.updateIhtiyatMinutes(minutes)
+                override suspend fun adjustIhtiyatMinutes(delta: Int) =
+                    preferences.incrementIhtiyatMinutes(delta)
 
-                override suspend fun updateHijriAdjustment(days: Int) =
-                    preferences.updateHijriAdjustment(days)
+                override suspend fun adjustHijriAdjustment(delta: Int) =
+                    preferences.incrementHijriAdjustment(delta)
 
                 override suspend fun setPrePrayerAlert(enabled: Boolean, minutes: Int) =
                     preferences.setPrePrayerAlert(enabled, minutes)
@@ -94,8 +93,6 @@ fun SettingsScreen(
             },
             rescheduleAlarms = { AlarmScheduler.scheduleNextPrayerAlarms(context) },
             refreshWidgets = { updateSholluWidgets(context) },
-            readIhtiyatMinutes = { preferences.ihtiyatMinutes.first() },
-            readHijriAdjustment = { preferences.hijriAdjustment.first() },
             startOngoingService = { enabled ->
                 val intent = Intent(context, OngoingNotificationService::class.java).apply {
                     action = if (enabled) {

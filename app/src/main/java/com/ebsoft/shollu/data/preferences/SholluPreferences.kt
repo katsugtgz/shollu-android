@@ -187,15 +187,24 @@ class SholluPreferences(private val context: Context) {
         }
     }
 
-    suspend fun updateIhtiyatMinutes(minutes: Int) {
+    /**
+     * Atomic stepper read-modify-write (cubic #23 round 2): the delta is applied to the
+     * PERSISTED value inside a single [edit] transform, and DataStore serializes edit
+     * transforms — so rapid taps and recreated-Activity instances can never lose an
+     * increment, unlike compute-then-write from a composition snapshot.
+     */
+    suspend fun incrementIhtiyatMinutes(delta: Int) {
         context.dataStore.edit { prefs ->
-            prefs[IHTIYAT_MINUTES] = minutes
+            val current = prefs[IHTIYAT_MINUTES] ?: 2
+            prefs[IHTIYAT_MINUTES] = (current + delta).coerceIn(0, 10)
         }
     }
 
-    suspend fun updateHijriAdjustment(days: Int) {
+    /** Atomic stepper RMW for the Hijri adjustment, clamped to -2..2. See [incrementIhtiyatMinutes]. */
+    suspend fun incrementHijriAdjustment(delta: Int) {
         context.dataStore.edit { prefs ->
-            prefs[HIJRI_ADJUSTMENT] = days
+            val current = prefs[HIJRI_ADJUSTMENT] ?: 0
+            prefs[HIJRI_ADJUSTMENT] = (current + delta).coerceIn(-2, 2)
         }
     }
 

@@ -50,14 +50,17 @@ class SettingsActionsTest {
                     recorder.write("method=${method.name}")
                 }
 
-                override suspend fun updateIhtiyatMinutes(minutes: Int) {
-                    prefs.ihtiyatMinutes = minutes
-                    recorder.write("ihtiyat=$minutes")
+                // Mirrors the DataStore edit transform: atomic persisted RMW, clamped.
+                override suspend fun adjustIhtiyatMinutes(delta: Int) {
+                    val next = ((prefs.ihtiyatMinutes ?: 2) + delta).coerceIn(0, 10)
+                    prefs.ihtiyatMinutes = next
+                    recorder.write("ihtiyat=$next")
                 }
 
-                override suspend fun updateHijriAdjustment(days: Int) {
-                    prefs.hijriAdjustment = days
-                    recorder.write("hijri=$days")
+                override suspend fun adjustHijriAdjustment(delta: Int) {
+                    val next = ((prefs.hijriAdjustment ?: 0) + delta).coerceIn(-2, 2)
+                    prefs.hijriAdjustment = next
+                    recorder.write("hijri=$next")
                 }
 
                 override suspend fun setPrePrayerAlert(enabled: Boolean, minutes: Int) {
@@ -87,11 +90,7 @@ class SettingsActionsTest {
             startVibrationTest = { recorder.service("vibrationTest") },
             setDropzoneRunning = { start -> recorder.service("dropzone=$start") },
             requestOverlayPermission = { recorder.permission("overlay") },
-            hasOverlayPermission = { overlayGranted },
-            // Steppers read the PERSISTED value (DataStore semantics), defaulting like the
-            // screen's initial collect: ihtiyat 2 (Kemenag), hijri 0.
-            readIhtiyatMinutes = { prefs.ihtiyatMinutes ?: 2 },
-            readHijriAdjustment = { prefs.hijriAdjustment ?: 0 }
+            hasOverlayPermission = { overlayGranted }
         )
     }
 
