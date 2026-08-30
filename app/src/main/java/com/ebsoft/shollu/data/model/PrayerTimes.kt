@@ -68,29 +68,12 @@ data class PrayerTimes(
     }
 
     /**
-     * Determines the next obligatory prayer based on the current time of day.
-     * Polar-invalid Subuh/Isya placeholders are skipped. When the current time is past the
-     * last valid major prayer, wraps around to tomorrow's first valid major (Subuh when it is
-     * valid, otherwise Dzuhur) — using [tomorrow]'s times when supplied, else this instance's.
-     */
-    fun getNextPrayer(now: LocalTime, tomorrow: PrayerTimes? = null): Pair<PrayerType, LocalTime> {
-        for ((type, time) in validMajorSchedule) {
-            if (now.isBefore(time)) {
-                return type to time
-            }
-        }
-        // Past the last valid major: tomorrow's first valid major prayer.
-        val rolloverSchedule = tomorrow?.validMajorSchedule ?: validMajorSchedule
-        val (type, time) = rolloverSchedule.first()
-        return type to time
-    }
-
-    /**
      * Determines the next obligatory prayer with complete LocalDateTime target,
      * ensuring proper date rollover across midnight and after Isya. Polar-invalid
      * Subuh/Isya placeholders are never the target; after the last valid major today the
      * target is tomorrow's first valid major (always exists: Dzuhur/Ashar/Maghrib are
-     * always valid).
+     * always valid). This is the single next-prayer selector for presentation AND a
+     * drop-in mirror of the scheduler's arming filter.
      */
     fun getNextPrayerTarget(
         now: LocalDateTime,

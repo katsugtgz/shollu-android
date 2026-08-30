@@ -200,7 +200,7 @@ class AlarmAndSchedulerTest {
 
         // Simulate 20:30 (Post Isya)
         val now = LocalDateTime.of(today, LocalTime.of(20, 30))
-        val (nextType, nextTime) = mockPrayerTimes.getNextPrayer(now.toLocalTime())
+        val (nextType, nextTime, _) = mockPrayerTimes.getNextPrayerTarget(now)
 
         assertEquals(PrayerType.SUBUH, nextType)
         assertEquals(LocalTime.of(4, 38), nextTime)

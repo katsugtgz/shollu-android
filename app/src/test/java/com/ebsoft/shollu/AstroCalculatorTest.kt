@@ -226,32 +226,32 @@ class AstroCalculatorTest {
         )
 
         // At 03:00, next should be Subuh
-        val (p1, t1) = times.getNextPrayer(LocalTime.of(3, 0))
+        val (p1, t1, _) = times.getNextPrayerTarget(LocalDateTime.of(date, LocalTime.of(3, 0)))
         assertEquals(PrayerType.SUBUH, p1)
         assertEquals(times.subuh, t1)
 
         // At 10:00, next should be Dzuhur
-        val (p2, t2) = times.getNextPrayer(LocalTime.of(10, 0))
+        val (p2, t2, _) = times.getNextPrayerTarget(LocalDateTime.of(date, LocalTime.of(10, 0)))
         assertEquals(PrayerType.DZUHUR, p2)
         assertEquals(times.dzuhur, t2)
 
         // At 14:00, next should be Ashar
-        val (p3, t3) = times.getNextPrayer(LocalTime.of(14, 0))
+        val (p3, t3, _) = times.getNextPrayerTarget(LocalDateTime.of(date, LocalTime.of(14, 0)))
         assertEquals(PrayerType.ASHAR, p3)
         assertEquals(times.ashar, t3)
 
         // At 16:30, next should be Maghrib
-        val (p4, t4) = times.getNextPrayer(LocalTime.of(16, 30))
+        val (p4, t4, _) = times.getNextPrayerTarget(LocalDateTime.of(date, LocalTime.of(16, 30)))
         assertEquals(PrayerType.MAGHRIB, p4)
         assertEquals(times.maghrib, t4)
 
         // At 18:30, next should be Isya
-        val (p5, t5) = times.getNextPrayer(LocalTime.of(18, 30))
+        val (p5, t5, _) = times.getNextPrayerTarget(LocalDateTime.of(date, LocalTime.of(18, 30)))
         assertEquals(PrayerType.ISYA, p5)
         assertEquals(times.isya, t5)
 
         // At 21:00 (past Isya), next should wrap to Subuh
-        val (p6, t6) = times.getNextPrayer(LocalTime.of(21, 0))
+        val (p6, t6, _) = times.getNextPrayerTarget(LocalDateTime.of(date, LocalTime.of(21, 0)))
         assertEquals(PrayerType.SUBUH, p6)
         assertEquals(times.subuh, t6)
     }

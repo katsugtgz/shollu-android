@@ -26,6 +26,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.City
+import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.engine.AstroCalculator
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.ui.navigation.Screen
@@ -86,6 +87,11 @@ class MainActivity : ComponentActivity() {
             val customOffsets by preferences.customOffsets.collectAsState(initial = emptyMap())
 
             val navController = rememberNavController()
+            // Activity-scoped cache of Home's city-frame schedule (today+tomorrow). Navigation
+            // disposes the Home composable, so the cache lets it re-seed without a loading flash.
+            var homeScheduleCache by remember {
+                mutableStateOf<Pair<PrayerTimes, PrayerTimes>?>(null)
+            }
             var showLocationPicker by remember { mutableStateOf(false) }
 
             val items = listOf(
@@ -147,6 +153,8 @@ class MainActivity : ComponentActivity() {
                                 ihtiyatMinutes = ihtiyatMinutes,
                                 customOffsets = customOffsets,
                                 hijriAdjustment = hijriAdjustment,
+                                cachedSchedule = homeScheduleCache,
+                                onScheduleComputed = { homeScheduleCache = it },
                                 onNavigateToQibla = { navController.navigate(Screen.Qibla.route) },
                                 onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                 onNavigateToLocationPicker = { showLocationPicker = true }

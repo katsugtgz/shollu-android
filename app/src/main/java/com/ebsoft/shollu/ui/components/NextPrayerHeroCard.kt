@@ -17,29 +17,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ebsoft.shollu.data.model.PrayerType
+import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import kotlinx.coroutines.delay
-import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun NextPrayerHeroCard(
-    nextPrayerType: PrayerType?,
-    nextPrayerTime: LocalTime?,
-    targetDateTime: LocalDateTime?,
+    schedule: Pair<PrayerTimes, PrayerTimes>?,
     timezoneHours: Double,
     cityName: String,
     hijriDateFormatted: String,
     onLocationClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // 1-second text tick for the HH:MM:SS countdown. The value itself is TRUE-epoch seconds
-    // remaining until the city-wall target instant (AlarmTime), so it is correct even when
-    // the device zone differs from the selected city.
+    // 1-second text tick for the HH:MM:SS countdown. Each tick re-derives the polar-aware
+    // target in the CITY's frame from the device epoch (AlarmTime.cityWallClockNow is a pure
+    // function of epoch + offset), so the countdown rolls over to the next slot within 1s of
+    // a prayer passing and stays correct when the device zone differs from the city.
     var deviceEpochMillis by remember { mutableStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
@@ -50,24 +47,26 @@ fun NextPrayerHeroCard(
     }
 
     // Null while today's times are not ready — honest empty/loading, never a fabricated slot.
-    val isReady = nextPrayerType != null && nextPrayerTime != null && targetDateTime != null
-    val totalSeconds = if (isReady) {
+    val target = schedule?.let { (today, tomorrow) ->
+        today.getNextPrayerTarget(AlarmTime.cityWallClockNow(deviceEpochMillis, timezoneHours), tomorrow)
+    }
+    val totalSeconds = target?.let { (type, time, targetDateTime) ->
         AlarmTime.remainingSecondsUntilCityWall(
-            target = targetDateTime!!,
+            target = targetDateTime,
             timezoneHours = timezoneHours,
             deviceEpochMillis = deviceEpochMillis
         )
-    } else 0L
+    } ?: 0L
 
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
 
-    val countdownText = if (isReady) {
+    val countdownText = if (target != null) {
         String.format("%02d : %02d : %02d", hours, minutes, seconds)
     } else "-- : -- : --"
-    val prayerName = nextPrayerType?.displayName ?: "Memuat jadwal…"
-    val prayerTimeText = nextPrayerTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "--:--"
+    val prayerName = target?.first?.displayName ?: "Memuat jadwal…"
+    val prayerTimeText = target?.second?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "--:--"
 
     Card(
         shape = RoundedCornerShape(24.dp),

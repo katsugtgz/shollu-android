@@ -33,8 +33,6 @@ import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.rememberAppLocale
 import com.ebsoft.shollu.ui.util.rememberTickMillis
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
 import java.util.Locale
 import java.time.format.DateTimeFormatter
 
@@ -47,6 +45,8 @@ fun HomeScreen(
     ihtiyatMinutes: Int,
     customOffsets: Map<String, Int>,
     hijriAdjustment: Int,
+    cachedSchedule: Pair<PrayerTimes, PrayerTimes>?,
+    onScheduleComputed: (Pair<PrayerTimes, PrayerTimes>) -> Unit,
     onNavigateToQibla: () -> Unit,
     onNavigateToCalendar: () -> Unit,
     onNavigateToLocationPicker: () -> Unit,
@@ -72,9 +72,11 @@ fun HomeScreen(
     // Today + tomorrow in the city frame, so the polar-aware selector can roll over to
     // tomorrow's first valid major prayer after today's last valid slot. Kept as ONE state
     // value: the selector needs both days, so the hero stays loading until both are ready.
-    var citySchedule by remember { mutableStateOf<Pair<PrayerTimes, PrayerTimes>?>(null) }
+    // Seeded from the activity-scoped cache (and reported back through onScheduleComputed)
+    // so returning to this tab from navigation does not flash a loading hero for a frame.
+    var citySchedule by remember { mutableStateOf(cachedSchedule) }
     LaunchedEffect(cityToday, selectedCity, calculationMethod, asrJuristic, ihtiyatMinutes, customOffsets) {
-        citySchedule = prayerRepository.calculateForDate(
+        val computed = prayerRepository.calculateForDate(
             date = cityToday,
             city = selectedCity,
             method = calculationMethod,
@@ -89,14 +91,16 @@ fun HomeScreen(
             ihtiyat = ihtiyatMinutes,
             offsets = customOffsets
         )
+        citySchedule = computed
+        onScheduleComputed(computed)
     }
 
-    // Polar-aware next target: invalid Subuh/Isya placeholders are never next; after the
-    // last valid major today the target is tomorrow's first valid major. Null while the
-    // times are not ready — no fabricated Subuh 04:30.
-    val nextTarget = citySchedule?.let { (today, tomorrow) -> today.getNextPrayerTarget(cityNow, tomorrow) }
-    val (nextPrayerType, nextPrayerTime, nextPrayerTargetDateTime) =
-        nextTarget ?: Triple<PrayerType?, LocalTime?, LocalDateTime?>(null, null, null)
+    // Polar-aware next target for the list highlight (30s tick): invalid Subuh/Isya
+    // placeholders are never next; after the last valid major today the target is
+    // tomorrow's first valid major. The hero re-derives its own target per second.
+    val nextPrayerType = citySchedule?.let { (today, tomorrow) ->
+        today.getNextPrayerTarget(cityNow, tomorrow).first
+    }
 
     LazyColumn(
         modifier = modifier
@@ -107,9 +111,7 @@ fun HomeScreen(
         // 1. Hero Next Prayer Card with Countdown
         item {
             NextPrayerHeroCard(
-                nextPrayerType = nextPrayerType,
-                nextPrayerTime = nextPrayerTime,
-                targetDateTime = nextPrayerTargetDateTime,
+                schedule = citySchedule,
                 timezoneHours = selectedCity.timezone,
                 cityName = selectedCity.name,
                 hijriDateFormatted = hijriDate.formatDisplay(),
@@ -145,7 +147,6 @@ fun HomeScreen(
                             city = selectedCity,
                             times = citySchedule?.first,
                             hijriDate = hijriDate.formatDisplay(),
-                            timezoneLabel = AlarmTime.timezoneLabel(selectedCity.timezone),
                             today = cityToday,
                             locale = appLocale
                         )
@@ -272,11 +273,11 @@ private fun shareTodaySchedule(
     city: City,
     times: PrayerTimes?,
     hijriDate: String,
-    timezoneLabel: String,
     today: LocalDate,
     locale: Locale = Locale.getDefault()
 ) {
     if (times == null) return
+    val timezoneLabel = AlarmTime.timezoneLabel(city.timezone)
     val text = buildString {
         appendLine("🕌 JADWAL SHOLAT HARI INI")
         appendLine("📍 Lokasi: ${city.name}")

@@ -26,6 +26,7 @@ import com.ebsoft.shollu.engine.HijriCalendarHelper
 import com.ebsoft.shollu.ui.theme.EmeraldGold
 import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.rememberAppLocale
+import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.util.rememberTickMillis
 import java.time.LocalDate
 import java.time.YearMonth
@@ -46,7 +47,13 @@ fun CalendarScreen(
     val context = LocalContext.current
     val appLocale = rememberAppLocale()
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Jadwal Bulanan, 1: Konversi Kalender, 2: Hari Besar
-    var currentYearMonth by remember { mutableStateOf(YearMonth.now()) }
+    // City-frame dates: the browsed month and the "today" highlight must match the city's
+    // calendar date (same frame as Home), never the device zone.
+    val dayTick = rememberTickMillis(intervalMillis = 60_000L)
+    val cityToday = remember(dayTick, selectedCity.timezone) {
+        AlarmTime.cityWallClockNow(timezoneHours = selectedCity.timezone).toLocalDate()
+    }
+    var currentYearMonth by remember { mutableStateOf(YearMonth.from(cityToday)) }
 
     val monthlySchedule = remember(currentYearMonth, selectedCity, calculationMethod, asrJuristic, ihtiyatMinutes, customOffsets) {
         prayerRepository.getMonthlySchedule(
@@ -93,6 +100,7 @@ fun CalendarScreen(
                 schedule = monthlySchedule,
                 city = selectedCity,
                 locale = appLocale,
+                today = cityToday,
                 onPreviousMonth = { currentYearMonth = currentYearMonth.minusMonths(1) },
                 onNextMonth = { currentYearMonth = currentYearMonth.plusMonths(1) },
                 onExport = { exportSchedule(context, selectedCity, currentYearMonth, monthlySchedule, appLocale) }
@@ -109,6 +117,7 @@ private fun MonthlyScheduleView(
     schedule: List<PrayerTimes>,
     city: City,
     locale: Locale,
+    today: LocalDate,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onExport: () -> Unit
@@ -185,7 +194,7 @@ private fun MonthlyScheduleView(
                 }
 
                 items(schedule) { item ->
-                    val isToday = item.date == LocalDate.now()
+                    val isToday = item.date == today
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

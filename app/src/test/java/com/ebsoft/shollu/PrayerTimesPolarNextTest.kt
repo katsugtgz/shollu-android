@@ -37,14 +37,14 @@ class PrayerTimesPolarNextTest {
         isIsyaValid = isyaValid
     )
 
-    // ---- getNextPrayer: skip invalid Subuh/Isya in the today walk ----
+    // ---- getNextPrayerTarget today walk: skip invalid Subuh/Isya ----
 
     @Test
     fun testInvalidSubuhIsSkippedTonight() {
         val today = LocalDate.of(2026, 6, 21)
         val todayTimes = times(today, subuhValid = false)
 
-        val (type, time) = todayTimes.getNextPrayer(LocalTime.of(3, 0))
+        val (type, time, _) = todayTimes.getNextPrayerTarget(LocalDateTime.of(today, LocalTime.of(3, 0)))
 
         assertEquals(PrayerType.DZUHUR, type)
         assertEquals(LocalTime.of(11, 56), time)
@@ -55,10 +55,11 @@ class PrayerTimesPolarNextTest {
         val today = LocalDate.of(2026, 6, 21)
         val todayTimes = times(today, isyaValid = false)
 
-        val (type, time) = todayTimes.getNextPrayer(LocalTime.of(18, 0))
+        val (type, time, target) = todayTimes.getNextPrayerTarget(LocalDateTime.of(today, LocalTime.of(18, 0)))
 
         assertEquals("Invalid Isya placeholder must never be next", PrayerType.SUBUH, type)
         assertEquals("Rollover target is tomorrow's Subuh (proxy: today's when tomorrow is null)", LocalTime.of(4, 38), time)
+        assertEquals(today.plusDays(1), target.toLocalDate())
     }
 
     @Test
@@ -66,7 +67,7 @@ class PrayerTimesPolarNextTest {
         val today = LocalDate.of(2026, 3, 20)
         val todayTimes = times(today)
 
-        val (type, time) = todayTimes.getNextPrayer(LocalTime.of(8, 0))
+        val (type, time, _) = todayTimes.getNextPrayerTarget(LocalDateTime.of(today, LocalTime.of(8, 0)))
 
         assertEquals(PrayerType.DZUHUR, type)
         assertEquals(LocalTime.of(11, 56), time)
