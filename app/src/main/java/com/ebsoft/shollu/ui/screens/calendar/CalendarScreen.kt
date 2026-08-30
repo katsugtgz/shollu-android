@@ -3,7 +3,6 @@ package com.ebsoft.shollu.ui.screens.calendar
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,12 +18,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.*
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.engine.HijriCalendarHelper
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.rememberAppLocale
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.util.rememberTickMillis
@@ -46,7 +42,9 @@ fun CalendarScreen(
 ) {
     val context = LocalContext.current
     val appLocale = rememberAppLocale()
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Jadwal Bulanan, 1: Konversi Kalender, 2: Hari Besar
+    // Connected exclusive selector over exactly the three CalendarMode entries (issue #17):
+    // exactly one mode is selected at all times, MONTHLY is the entry mode.
+    val modeSelector = remember { CalendarModeSelector() }
     // City-frame dates: the browsed month and the "today" highlight must match the city's
     // calendar date (same frame as Home), never the device zone.
     val dayTick = rememberTickMillis(intervalMillis = 60_000L)
@@ -78,31 +76,38 @@ fun CalendarScreen(
             .fillMaxSize()
             .padding(top = 16.dp)
     ) {
-        // Tab Selector
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = EmeraldPrimary
+        // Mode Selector — connected exclusive button group (SegmentedButton)
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
         ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = { Text("Jadwal Bulanan", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = { Text("Konversi Tanggal", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-            )
-            Tab(
-                selected = selectedTab == 2,
-                onClick = { selectedTab = 2 },
-                text = { Text("Hari Besar", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-            )
+            CalendarMode.entries.forEachIndexed { index, mode ->
+                SegmentedButton(
+                    // Equal-weight segments: intrinsic-width labels can overflow the row on
+                    // narrow phones, clipping the last mode out of reach.
+                    modifier = Modifier.weight(1f),
+                    selected = modeSelector.selected == mode,
+                    onClick = { modeSelector.select(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = CalendarMode.entries.size
+                    ),
+                    label = {
+                        Text(
+                            mode.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                )
+            }
         }
 
-        when (selectedTab) {
-            0 -> MonthlyScheduleView(
+        Spacer(modifier = Modifier.height(12.dp))
+
+        when (modeSelector.selected) {
+            CalendarMode.MONTHLY -> MonthlyScheduleView(
                 yearMonth = currentYearMonth,
                 schedule = monthlySchedule,
                 city = selectedCity,
@@ -112,12 +117,12 @@ fun CalendarScreen(
                 onNextMonth = { browsedAway = true; currentYearMonth = currentYearMonth.plusMonths(1) },
                 onExport = { exportSchedule(context, selectedCity, currentYearMonth, monthlySchedule, appLocale) }
             )
-            1 -> DateConverterView(
+            CalendarMode.CONVERTER -> DateConverterView(
                 selectedCity = selectedCity,
                 hijriAdjustment = hijriAdjustment,
                 locale = appLocale
             )
-            2 -> IslamicEventsView(hijriAdjustment = hijriAdjustment)
+            CalendarMode.EVENTS -> IslamicEventsView(hijriAdjustment = hijriAdjustment)
         }
     }
 }
@@ -151,8 +156,16 @@ private fun MonthlyScheduleView(
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = monthTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text(text = city.name, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = monthTitle,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = city.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             IconButton(onClick = onNextMonth) {
@@ -165,13 +178,16 @@ private fun MonthlyScheduleView(
         // Export Button
         Button(
             onClick = onExport,
-            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.Download, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Ekspor / Bagikan Jadwal (HTML/Teks)", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Ekspor / Bagikan Jadwal (HTML/Teks)",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -190,16 +206,16 @@ private fun MonthlyScheduleView(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(EmeraldPrimary, RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
                             .padding(vertical = 10.dp, horizontal = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Tgl", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.width(28.dp))
-                        Text("Subuh", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.width(42.dp))
-                        Text("Dzuhur", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.width(42.dp))
-                        Text("Ashar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.width(42.dp))
-                        Text("Maghrib", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.width(44.dp))
-                        Text("Isya", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.width(42.dp))
+                        Text("Tgl", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
+                        Text("Subuh", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
+                        Text("Dzuhur", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
+                        Text("Ashar", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
+                        Text("Maghrib", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
+                        Text("Isya", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -210,19 +226,19 @@ private fun MonthlyScheduleView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                if (isToday) EmeraldGold.copy(alpha = 0.2f) else Color.Transparent,
-                                RoundedCornerShape(6.dp)
+                                if (isToday) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f) else Color.Transparent,
+                                RoundedCornerShape(16.dp)
                             )
                             .padding(vertical = 6.dp, horizontal = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("${item.date.dayOfMonth}", fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp, modifier = Modifier.width(28.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.SUBUH), fontSize = 11.sp, modifier = Modifier.width(42.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.DZUHUR), fontSize = 11.sp, modifier = Modifier.width(42.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.ASHAR), fontSize = 11.sp, modifier = Modifier.width(42.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.MAGHRIB), fontSize = 11.sp, modifier = Modifier.width(44.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.ISYA), fontSize = 11.sp, modifier = Modifier.width(42.dp))
+                        Text("${item.date.dayOfMonth}", style = MaterialTheme.typography.labelSmall, fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.width(28.dp))
+                        Text(item.getFormattedTimeFor(PrayerType.SUBUH), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
+                        Text(item.getFormattedTimeFor(PrayerType.DZUHUR), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
+                        Text(item.getFormattedTimeFor(PrayerType.ASHAR), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
+                        Text(item.getFormattedTimeFor(PrayerType.MAGHRIB), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp))
+                        Text(item.getFormattedTimeFor(PrayerType.ISYA), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                 }
@@ -256,15 +272,15 @@ private fun DateConverterView(selectedCity: City, hijriAdjustment: Int, locale: 
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "Konversi Penanggalan",
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = EmeraldPrimary
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
                     text = "Tanggal Masehi Hari Ini: ${gregDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy", locale))}",
-                    fontSize = 14.sp
+                    style = MaterialTheme.typography.bodyMedium
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -272,21 +288,21 @@ private fun DateConverterView(selectedCity: City, hijriAdjustment: Int, locale: 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(EmeraldPrimary, RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp))
                         .padding(16.dp)
                 ) {
                     Column {
                         Text(
                             text = "Hasil Konversi Hijriyah:",
-                            color = Color(0xFFE0E0E0),
-                            fontSize = 12.sp
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = hijriResult.formatDisplay(),
-                            color = EmeraldGold,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
@@ -308,18 +324,18 @@ private fun IslamicEventsView(hijriAdjustment: Int) {
         item {
             Text(
                 text = "Hari Besar & Momen Puasa Sunnah",
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = EmeraldPrimary
+                color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(4.dp))
         }
 
         items(events) { event ->
             Card(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (event.isFastingDay) EmeraldPrimary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    containerColor = if (event.isFastingDay) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -331,12 +347,15 @@ private fun IslamicEventsView(hijriAdjustment: Int) {
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .size(40.dp)
-                            .background(if (event.isFastingDay) EmeraldGold else EmeraldPrimary, RoundedCornerShape(10.dp))
+                            .background(
+                                if (event.isFastingDay) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                                RoundedCornerShape(16.dp)
+                            )
                     ) {
                         Icon(
                             imageVector = if (event.isFastingDay) Icons.Default.BrightnessMedium else Icons.Default.Event,
                             contentDescription = null,
-                            tint = if (event.isFastingDay) Color.Black else Color.White,
+                            tint = if (event.isFastingDay) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -344,8 +363,16 @@ private fun IslamicEventsView(hijriAdjustment: Int) {
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column {
-                        Text(text = event.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(text = event.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = event.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = event.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,8 +36,6 @@ import com.ebsoft.shollu.ui.screens.qibla.QiblaCompassScreen
 import com.ebsoft.shollu.ui.screens.scheduler.SchedulerScreen
 import com.ebsoft.shollu.ui.screens.settings.LocationPickerDialog
 import com.ebsoft.shollu.ui.screens.settings.SettingsScreen
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.theme.SholluTheme
 import android.location.LocationManager
 import com.google.android.gms.location.Priority
@@ -119,7 +116,10 @@ class MainActivity : ComponentActivity() {
                             items.forEach { screen ->
                                 val isSelected = currentRoute == screen.route
                                 NavigationBarItem(
-                                    icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                    // Decorative icon: the visible label() supplies the
+                                    // accessible destination name — a contentDescription
+                                    // here would make TalkBack announce the tab twice.
+                                    icon = { Icon(screen.icon, contentDescription = null) },
                                     label = { Text(screen.title, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                                     selected = isSelected,
                                     onClick = {
@@ -132,9 +132,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = EmeraldGold,
-                                        selectedTextColor = EmeraldPrimary,
-                                        indicatorColor = EmeraldPrimary,
+                                        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

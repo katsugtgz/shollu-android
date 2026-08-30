@@ -11,12 +11,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.AsrJuristic
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.City
@@ -28,8 +27,6 @@ import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.service.FloatingDropzoneService
 import com.ebsoft.shollu.ui.components.NextPrayerHeroCard
 import com.ebsoft.shollu.ui.components.PrayerCard
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.util.rememberAppLocale
 import kotlinx.coroutines.delay
 import java.time.LocalDate
@@ -155,39 +152,51 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // 2. Quick Action Buttons
+        // 2. Quick Actions — Material3 ButtonGroup of ONE-SHOT clickable items (issue #16).
+        // clickableItem — NOT toggleableItem — means no action ever renders selected/checked,
+        // Bagikan included (a share is an action, not a mode). Icons are decorative: the
+        // label param supplies the accessible name.
         item {
-            Row(
+            ButtonGroup(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                overflowIndicator = { menuState -> ButtonGroupDefaults.OverflowIndicator(menuState) }
             ) {
-                QuickActionButton(
-                    icon = Icons.Default.Explore,
-                    title = "Kiblat",
-                    onClick = onNavigateToQibla,
-                    modifier = Modifier.weight(1f)
-                )
-                QuickActionButton(
-                    icon = Icons.Default.CalendarMonth,
-                    title = "Jadwal",
-                    onClick = onNavigateToCalendar,
-                    modifier = Modifier.weight(1f)
-                )
-                QuickActionButton(
-                    icon = Icons.Default.Share,
-                    title = "Bagikan",
-                    onClick = {
-                        shareTodaySchedule(
-                            context = context,
-                            city = selectedCity,
-                            times = citySchedule?.first,
-                            hijriDate = hijriDate.formatDisplay(),
-                            today = cityToday,
-                            locale = appLocale
-                        )
-                    },
-                    modifier = Modifier.weight(1f)
-                )
+                homeQuickActions.forEach { action ->
+                    clickableItem(
+                        onClick = {
+                            when (action.id) {
+                                QuickActionId.QIBLA -> onNavigateToQibla()
+                                QuickActionId.SCHEDULE -> onNavigateToCalendar()
+                                QuickActionId.SHARE -> shareTodaySchedule(
+                                    context = context,
+                                    city = selectedCity,
+                                    times = citySchedule?.first,
+                                    hijriDate = hijriDate.formatDisplay(),
+                                    today = cityToday,
+                                    locale = appLocale
+                                )
+                            }
+                        },
+                        label = action.label,
+                        icon = {
+                            // 48dp slot (issue #16): clickableItem has no modifier param, so the
+                            // minimum target is carried by the content — and M3's default
+                            // minimumInteractiveComponentSize additionally expands the touch
+                            // target to >=48dp on the clickable item itself.
+                            Box(
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = quickActionIcon(action.id),
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        weight = 1f
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(20.dp))
         }
@@ -206,7 +215,7 @@ fun HomeScreen(
                 )
                 Text(
                     text = cityToday.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", appLocale)),
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -232,10 +241,9 @@ fun HomeScreen(
                 // Highlight only a slot of TODAY's list: once the selector has rolled over to
                 // tomorrow, the target's date is cityToday.plusDays(1) so no card matches — a
                 // type-only match would flag today's already-passed same-type prayer
-                // "Akan Datang".
-                val isNext = nextTarget?.let { (nextType, _, targetDateTime) ->
-                    type == nextType && targetDateTime.toLocalDate() == cityToday
-                } == true
+                // "Akan Datang". Selection itself is PrayerTimes.getNextPrayerTarget (polar
+                // placeholders never next); this predicate only dates the match.
+                val isNext = isNextPrayerRow(nextTarget, type, cityToday)
                 PrayerCard(
                     prayerType = type,
                     timeFormatted = formatted,
@@ -244,12 +252,15 @@ fun HomeScreen(
             }
         }
 
-        // 5. Islamic Daily Quote
+        // 5. Islamic Daily Quote — container/tint/type all via colorScheme + typography roles
+        // (issue #16); no hardcoded emerald/gold hex anywhere in the screen.
         item {
             Spacer(modifier = Modifier.height(16.dp))
             Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -259,15 +270,15 @@ fun HomeScreen(
                     Icon(
                         imageVector = Icons.Default.FormatQuote,
                         contentDescription = null,
-                        tint = EmeraldPrimary,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = "“Sesungguhnya sholat itu adalah fardhu yang ditentukan waktunya atas orang-orang yang beriman.” (QS. An-Nisa: 103)",
-                        fontSize = 13.sp,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurface
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
             }
@@ -275,38 +286,11 @@ fun HomeScreen(
     }
 }
 
-@Composable
-private fun QuickActionButton(
-    icon: ImageVector,
-    title: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        modifier = modifier.height(48.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = EmeraldPrimary,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
+/** Icon per quick action — pure UI mapping, kept out of the testable descriptor model. */
+private fun quickActionIcon(id: QuickActionId): ImageVector = when (id) {
+    QuickActionId.QIBLA -> Icons.Default.Explore
+    QuickActionId.SCHEDULE -> Icons.Default.CalendarMonth
+    QuickActionId.SHARE -> Icons.Default.Share
 }
 
 private fun shareTodaySchedule(
