@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.*
 import com.ebsoft.shollu.data.preferences.SholluPreferences
@@ -31,8 +30,7 @@ import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.service.FloatingDropzoneService
 import com.ebsoft.shollu.service.OngoingNotificationService
 import com.ebsoft.shollu.service.VibrationAlarmService
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
+import com.ebsoft.shollu.widget.updateSholluWidgets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -67,6 +65,86 @@ fun SettingsScreen(
     var showMethodDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
 
+    // Pure mutation matrix (JVM-tested): decide WHICH effects each control triggers; this
+    // composable only supplies the Android plumbing behind the injected seams.
+    val actions = remember(preferences, context) {
+        SettingsActions(
+            mutations = object : SettingsMutations {
+                override suspend fun updateCalculationMethod(method: CalculationMethod) =
+                    preferences.updateCalculationMethod(method)
+
+                override suspend fun updateIhtiyatMinutes(minutes: Int) =
+                    preferences.updateIhtiyatMinutes(minutes)
+
+                override suspend fun updateHijriAdjustment(days: Int) =
+                    preferences.updateHijriAdjustment(days)
+
+                override suspend fun setPrePrayerAlert(enabled: Boolean, minutes: Int) =
+                    preferences.setPrePrayerAlert(enabled, minutes)
+
+                override suspend fun setMaxVibrationEnabled(enabled: Boolean) =
+                    preferences.setMaxVibrationEnabled(enabled)
+
+                override suspend fun setThemeMode(mode: ThemeMode) =
+                    preferences.setThemeMode(mode)
+
+                override suspend fun setOngoingNotificationEnabled(enabled: Boolean) =
+                    preferences.setOngoingNotificationEnabled(enabled)
+            },
+            rescheduleAlarms = { AlarmScheduler.scheduleNextPrayerAlarms(context) },
+            refreshWidgets = { updateSholluWidgets(context) },
+            startOngoingService = { enabled ->
+                val intent = Intent(context, OngoingNotificationService::class.java).apply {
+                    action = if (enabled) {
+                        OngoingNotificationService.ACTION_START_ONGOING
+                    } else {
+                        OngoingNotificationService.ACTION_STOP_ONGOING
+                    }
+                }
+                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            },
+            startVibrationTest = {
+                val intent = Intent(context, VibrationAlarmService::class.java).apply {
+                    action = VibrationAlarmService.ACTION_START_VIBRATION
+                    putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, "Uji Coba Getar Shollu")
+                    putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "12:00")
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            },
+            setDropzoneRunning = { start ->
+                val dropzoneIntent = Intent(context, FloatingDropzoneService::class.java)
+                if (start) {
+                    context.startService(dropzoneIntent)
+                } else {
+                    context.stopService(dropzoneIntent)
+                }
+            },
+            hasOverlayPermission = {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+            },
+            requestOverlayPermission = {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                )
+            }
+        )
+    }
+
+    fun launchSetting(block: suspend () -> Unit) {
+        settingsScope.launch(Dispatchers.IO) { block() }
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -77,13 +155,13 @@ fun SettingsScreen(
         item {
             Text(
                 text = "Pengaturan",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = EmeraldPrimary
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "Sesuaikan lokasi, metode hisab, getar, dan status bar.",
-                fontSize = 13.sp,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -91,324 +169,145 @@ fun SettingsScreen(
         // Section 1: Lokasi & Metode Hisab
         item {
             SettingsSectionHeader(title = "Lokasi & Perhitungan Waktu")
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    SettingsRowClickable(
-                        icon = Icons.Default.LocationOn,
-                        title = "Kota / Lokasi Aktif",
-                        subtitle = "${selectedCity.name} (${selectedCity.latitude}, ${selectedCity.longitude})",
-                        onClick = onOpenLocationPicker
-                    )
+            SettingsCard {
+                SettingsRow(
+                    icon = Icons.Default.LocationOn,
+                    title = "Kota / Lokasi Aktif",
+                    subtitle = "${selectedCity.name} (${selectedCity.latitude}, ${selectedCity.longitude})",
+                    onClick = onOpenLocationPicker
+                )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                SettingsDivider()
 
-                    SettingsRowClickable(
-                        icon = Icons.Default.Calculate,
-                        title = "Metode Hisab Waktu Sholat",
-                        subtitle = calculationMethod.title,
-                        onClick = { showMethodDialog = true }
-                    )
+                SettingsRow(
+                    icon = Icons.Default.Calculate,
+                    title = "Metode Hisab Waktu Sholat",
+                    subtitle = calculationMethod.title,
+                    onClick = { showMethodDialog = true }
+                )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                SettingsDivider()
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Ihtiyat (Menit Pengaman)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(text = "Standar Kemenag RI: +2 menit", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    settingsScope.launch(Dispatchers.IO) {
-                                        val next = (ihtiyatMinutes - 1).coerceAtLeast(0)
-                                        preferences.updateIhtiyatMinutes(next)
-                                        AlarmScheduler.scheduleNextPrayerAlarms(context)
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.Remove, contentDescription = "Kurang")
-                            }
-                            Text(text = "+$ihtiyatMinutes m", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            IconButton(
-                                onClick = {
-                                    settingsScope.launch(Dispatchers.IO) {
-                                        val next = (ihtiyatMinutes + 1).coerceAtMost(10)
-                                        preferences.updateIhtiyatMinutes(next)
-                                        AlarmScheduler.scheduleNextPrayerAlarms(context)
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Tambah")
-                            }
-                        }
+                StepperRow(
+                    icon = Icons.Default.Schedule,
+                    title = "Ihtiyat (Menit Pengaman)",
+                    subtitle = "Standar Kemenag RI: +2 menit",
+                    valueText = "+$ihtiyatMinutes m",
+                    onDecrement = {
+                        launchSetting { actions.changeIhtiyat(ihtiyatMinutes, delta = -1) }
+                    },
+                    onIncrement = {
+                        launchSetting { actions.changeIhtiyat(ihtiyatMinutes, delta = +1) }
                     }
+                )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                SettingsDivider()
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Koreksi Hari Hijriyah", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(text = "Penyesuaian hisab rukyatul hilal", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    settingsScope.launch(Dispatchers.IO) {
-                                        val next = (hijriAdjustment - 1).coerceAtLeast(-2)
-                                        preferences.updateHijriAdjustment(next)
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.Remove, contentDescription = "Kurang")
-                            }
-                            Text(text = "$hijriAdjustment hr", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            IconButton(
-                                onClick = {
-                                    settingsScope.launch(Dispatchers.IO) {
-                                        val next = (hijriAdjustment + 1).coerceAtMost(2)
-                                        preferences.updateHijriAdjustment(next)
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Tambah")
-                            }
-                        }
+                StepperRow(
+                    icon = Icons.Default.CalendarMonth,
+                    title = "Koreksi Hari Hijriyah",
+                    subtitle = "Penyesuaian hisab rukyatul hilal",
+                    valueText = "$hijriAdjustment hr",
+                    onDecrement = {
+                        launchSetting { actions.changeHijriAdjustment(hijriAdjustment, delta = -1) }
+                    },
+                    onIncrement = {
+                        launchSetting { actions.changeHijriAdjustment(hijriAdjustment, delta = +1) }
                     }
-                }
+                )
             }
         }
 
         // Section 2: Notifikasi, Getar & Status Bar (PRIORITY)
         item {
             SettingsSectionHeader(title = "Notifikasi & Alarm Status Bar")
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Ongoing Status Bar Notification Switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.VerticalAlignBottom,
-                                contentDescription = null,
-                                tint = EmeraldPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Status Bar Countdown Berkelanjutan",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Muncul di notification shade; hitung mundur live; tidak bisa diswipe (hanya mati dari tombol ini); tahan DND.",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
+            SettingsCard {
+                SettingsRow(
+                    icon = Icons.Default.VerticalAlignBottom,
+                    title = "Status Bar Countdown Berkelanjutan",
+                    subtitle = "Muncul di notification shade; hitung mundur live; tidak bisa diswipe (hanya mati dari tombol ini); tahan DND.",
+                    trailing = {
                         Switch(
                             checked = isOngoingEnabled,
                             onCheckedChange = { checked ->
-                                settingsScope.launch(Dispatchers.IO) {
-                                    preferences.setOngoingNotificationEnabled(checked)
-                                }
-                                val intent = Intent(context, OngoingNotificationService::class.java).apply {
-                                    action = if (checked) OngoingNotificationService.ACTION_START_ONGOING else OngoingNotificationService.ACTION_STOP_ONGOING
-                                }
-                                if (checked) {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                        context.startForegroundService(intent)
-                                    } else {
-                                        context.startService(intent)
-                                    }
-                                } else {
-                                    context.startService(intent)
-                                }
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = EmeraldGold, checkedTrackColor = EmeraldPrimary)
+                                launchSetting { actions.setOngoingNotification(checked) }
+                            }
                         )
                     }
+                )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                SettingsDivider()
 
-                    // Maximum Vibration Intensity Switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Vibration,
-                                contentDescription = null,
-                                tint = EmeraldPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Getar Intensitas Maksimal",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Pola gelombang denyut getar motor kuat dan durasi maksimal saat waktu sholat.",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
+                SettingsRow(
+                    icon = Icons.Default.Vibration,
+                    title = "Getar Intensitas Maksimal",
+                    subtitle = "Pola gelombang denyut getar motor kuat dan durasi maksimal saat waktu sholat.",
+                    trailing = {
                         Switch(
                             checked = isMaxVibrationEnabled,
                             onCheckedChange = { checked ->
-                                settingsScope.launch(Dispatchers.IO) {
-                                    preferences.setMaxVibrationEnabled(checked)
-                                }
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = EmeraldGold, checkedTrackColor = EmeraldPrimary)
+                                launchSetting { actions.setMaxVibration(checked) }
+                            }
                         )
                     }
+                )
 
-                    // Test Vibration Button
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedButton(
-                        onClick = {
-                            val intent = Intent(context, VibrationAlarmService::class.java).apply {
-                                action = VibrationAlarmService.ACTION_START_VIBRATION
-                                putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, "Uji Coba Getar Shollu")
-                                putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "12:00")
-                            }
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                context.startForegroundService(intent)
-                            } else {
-                                context.startService(intent)
-                            }
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Tes Getar Maksimal (30 Detik)")
-                    }
+                Spacer(modifier = Modifier.height(10.dp))
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                OutlinedButton(
+                    onClick = { actions.runVibrationTest() },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Tes Getar Maksimal (30 Detik)")
+                }
 
-                    // Pre-Prayer Warning
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Pengingat Sebelum Masuk Waktu", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(text = "Peringatan $prePrayerMinutes menit sebelum adzan sholat tiba", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                SettingsDivider()
+
+                SettingsRow(
+                    icon = Icons.Default.NotificationsActive,
+                    title = "Pengingat Sebelum Masuk Waktu",
+                    subtitle = "Peringatan $prePrayerMinutes menit sebelum adzan sholat tiba",
+                    trailing = {
                         Switch(
                             checked = isPrePrayerEnabled,
                             onCheckedChange = { checked ->
-                                settingsScope.launch(Dispatchers.IO) {
-                                    preferences.setPrePrayerAlert(checked, prePrayerMinutes)
-                                    AlarmScheduler.scheduleNextPrayerAlarms(context)
-                                }
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = EmeraldGold, checkedTrackColor = EmeraldPrimary)
+                                launchSetting { actions.setPrePrayerAlert(checked, prePrayerMinutes) }
+                            }
                         )
                     }
-                }
+                )
             }
         }
 
         // Section 3: Tampilan & Dropzone
         item {
             SettingsSectionHeader(title = "Tampilan & Dropzone")
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    SettingsRowClickable(
-                        icon = Icons.Default.Palette,
-                        title = "Tema Aplikasi",
-                        subtitle = themeMode.title,
-                        onClick = { showThemeDialog = true }
-                    )
+            SettingsCard {
+                SettingsRow(
+                    icon = Icons.Default.Palette,
+                    title = "Tema Aplikasi",
+                    subtitle = themeMode.title,
+                    onClick = { showThemeDialog = true }
+                )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                SettingsDivider()
 
-                    // Floating Dropzone
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.PictureInPicture,
-                                contentDescription = null,
-                                tint = EmeraldPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Floating Dropzone Mini Bar",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Widget melayang mini di layar ala Shollu PC",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
+                SettingsRow(
+                    icon = Icons.Default.PictureInPicture,
+                    title = "Floating Dropzone Mini Bar",
+                    subtitle = "Widget melayang mini di layar ala Shollu PC",
+                    trailing = {
                         Switch(
                             checked = isFloatingDropzoneRunning,
                             onCheckedChange = { start ->
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
-                                    val intent = Intent(
-                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                        Uri.parse("package:${context.packageName}")
-                                    )
-                                    context.startActivity(intent)
-                                } else {
-                                    val dropzoneIntent = Intent(context, FloatingDropzoneService::class.java)
-                                    if (start) {
-                                        context.startService(dropzoneIntent)
-                                    } else {
-                                        context.stopService(dropzoneIntent)
-                                    }
-                                }
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = EmeraldGold, checkedTrackColor = EmeraldPrimary)
+                                launchSetting { actions.toggleDropzone(start) }
+                            }
                         )
                     }
-                }
+                )
             }
         }
     }
@@ -426,21 +325,26 @@ fun SettingsScreen(
                     CalculationMethod.values().forEach { method ->
                         Surface(
                             onClick = {
-                                settingsScope.launch(Dispatchers.IO) {
-                                    preferences.updateCalculationMethod(method)
-                                    AlarmScheduler.scheduleNextPrayerAlarms(context)
-                                }
+                                launchSetting { actions.setCalculationMethod(method) }
                                 showMethodDialog = false
                             },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (method == calculationMethod) EmeraldPrimary.copy(alpha = 0.15f) else Color.Transparent,
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (method == calculationMethod) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            } else {
+                                Color.Transparent
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = method.title,
-                                fontSize = 13.sp,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = if (method == calculationMethod) FontWeight.Bold else FontWeight.Normal,
-                                color = if (method == calculationMethod) EmeraldPrimary else MaterialTheme.colorScheme.onSurface,
+                                color = if (method == calculationMethod) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
                                 modifier = Modifier.padding(12.dp)
                             )
                         }
@@ -464,20 +368,26 @@ fun SettingsScreen(
                     ThemeMode.values().forEach { mode ->
                         Surface(
                             onClick = {
-                                settingsScope.launch(Dispatchers.IO) {
-                                    preferences.setThemeMode(mode)
-                                }
+                                launchSetting { actions.setThemeMode(mode) }
                                 showThemeDialog = false
                             },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (mode == themeMode) EmeraldPrimary.copy(alpha = 0.15f) else Color.Transparent,
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (mode == themeMode) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            } else {
+                                Color.Transparent
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = mode.title,
-                                fontSize = 14.sp,
+                                style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = if (mode == themeMode) FontWeight.Bold else FontWeight.Normal,
-                                color = if (mode == themeMode) EmeraldPrimary else MaterialTheme.colorScheme.onSurface,
+                                color = if (mode == themeMode) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
                                 modifier = Modifier.padding(12.dp)
                             )
                         }
@@ -492,44 +402,149 @@ fun SettingsScreen(
     }
 }
 
+/** 20dp-radius squircle section card, role-colored. */
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), content = content)
+    }
+}
+
 @Composable
 private fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
+        style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
-        fontSize = 14.sp,
-        color = EmeraldPrimary,
+        color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
     )
 }
 
 @Composable
-private fun SettingsRowClickable(
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 12.dp),
+        color = MaterialTheme.colorScheme.outlineVariant
+    )
+}
+
+/**
+ * One settings list item: icon, title, subtitle, optional trailing control (switch/stepper),
+ * optional click. All colors come from MaterialTheme.colorScheme roles.
+ */
+@Composable
+private fun SettingsRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    val rowModifier = modifier
+        .fillMaxWidth()
+        .heightIn(min = 56.dp)
+        .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+    Row(
+        modifier = rowModifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (trailing != null) {
+            trailing()
+        } else if (onClick != null) {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Stepper row: icon + title + subtitle on the left, minus/plus buttons with >=48dp touch
+ * targets around the value label on the right.
+ */
+@Composable
+private fun StepperRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    valueText: String,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .heightIn(min = 56.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = EmeraldPrimary,
-                modifier = Modifier.size(24.dp)
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(text = title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(text = subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+        IconButton(
+            onClick = onDecrement,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(Icons.Default.Remove, contentDescription = "Kurang")
+        }
+        Text(
+            text = valueText,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.widthIn(min = 56.dp)
+        )
+        IconButton(
+            onClick = onIncrement,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Tambah")
+        }
     }
 }
