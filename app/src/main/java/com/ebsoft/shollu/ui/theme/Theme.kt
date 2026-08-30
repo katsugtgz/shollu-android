@@ -50,10 +50,26 @@ private val AmoledDarkColorScheme = darkColorScheme(
     surfaceVariant = AmoledSurfaceCard
 )
 
+/**
+ * App theme root. Color roles unchanged; the motion policy lives in [Motion.kt].
+ *
+ * Confinement policy (issue #15): expressive-surface APIs (MaterialExpressiveTheme,
+ * MotionScheme) are STABLE in material3 1.5.0-alpha24, so no @OptIn is needed; if a
+ * still-experimental API is ever adopted, its @OptIn stays in ui/theme thin wrappers —
+ * never sprayed across screens.
+ *
+ * Nested-theme exception (issue #15): fullscreen alarm content may pin
+ * [MotionScheme.standard()] through the [motionScheme] param — same colors/shapes/type.
+ *
+ * @param motionScheme Null = observe the system animator duration scale (expressive
+ *   default, standard at 0). Explicit MotionScheme.standard() is the documented
+ *   nested-theme escape hatch — fullscreen alarm content.
+ */
 @Composable
 fun SholluTheme(
     themeMode: ThemeMode = ThemeMode.EMERALD,
     darkTheme: Boolean = isSystemInDarkTheme(),
+    motionScheme: MotionScheme? = null,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -70,8 +86,13 @@ fun SholluTheme(
         }
     }
 
-    MaterialTheme(
+    val resolvedMotion = motionScheme ?: motionSchemeFor(rememberAnimatorDurationScale())
+
+    // motionScheme is passed explicitly: bare MaterialExpressiveTheme() resolves
+    // MotionScheme.standard() internally, which would silently disable expressive motion.
+    MaterialExpressiveTheme(
         colorScheme = colorScheme,
+        motionScheme = resolvedMotion,
         typography = Typography,
         content = content
     )

@@ -48,7 +48,10 @@ class FullscreenAlarmActivity : ComponentActivity() {
         val timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
 
         setContent {
-            SholluTheme {
+            // Documented nested-theme exception (issue #15): same colors/shapes/type as the
+            // app root, but standard() motion — an alarm must render instantly, springs off.
+            // ThemeMode + city-label wiring here is a later ticket (#15 follow-up).
+            SholluTheme(motionScheme = MotionScheme.standard()) {
                 FullscreenAlarmScreen(
                     prayerName = prayerName,
                     prayerTime = prayerTime,
