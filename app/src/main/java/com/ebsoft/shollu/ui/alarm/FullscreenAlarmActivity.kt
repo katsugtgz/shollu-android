@@ -8,11 +8,11 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -41,6 +41,11 @@ class FullscreenAlarmActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        // The alarm backdrop is an always-dark gradient (Color.Black → primary) regardless of
+        // ThemeMode, so the system-bar icons must be LIGHT even when the resolved scheme is
+        // light. SholluTheme's systemBarsBackgroundDark param pins that without fighting the
+        // theme's own icon-appearance SideEffect.
         turnScreenOnAndShowWhenLocked()
 
         val prayerName = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_NAME) ?: "Sholat"
@@ -64,7 +69,11 @@ class FullscreenAlarmActivity : ComponentActivity() {
             // Documented nested-theme exception (issues #15/#20): the ONE sanctioned nested
             // MaterialExpressiveTheme — same colors/shapes/type as the app root for the saved
             // ThemeMode, but standard() motion — an alarm must render instantly, springs off.
-            SholluTheme(themeMode = themeMode, motionScheme = MotionScheme.standard()) {
+            SholluTheme(
+                themeMode = themeMode,
+                motionScheme = MotionScheme.standard(),
+                systemBarsBackgroundDark = true
+            ) {
                 FullscreenAlarmScreen(
                     prayerName = prayerName,
                     prayerTime = prayerTime,
@@ -148,6 +157,7 @@ fun FullscreenAlarmScreen(
                     )
                 )
             )
+            .systemBarsPadding()
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -159,7 +169,7 @@ fun FullscreenAlarmScreen(
             Text(
                 text = "SHOLLU",
                 color = accent,
-                fontSize = 18.sp,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 4.sp
             )
@@ -195,7 +205,7 @@ fun FullscreenAlarmScreen(
             Text(
                 text = "Waktu $prayerName Telah Masuk",
                 color = Color.White,
-                fontSize = 24.sp,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
@@ -205,7 +215,7 @@ fun FullscreenAlarmScreen(
                 Text(
                     text = if (timezoneLabel != null) "$prayerTime $timezoneLabel" else prayerTime,
                     color = accent,
-                    fontSize = 32.sp,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.ExtraBold
                 )
             }
@@ -214,7 +224,7 @@ fun FullscreenAlarmScreen(
             Text(
                 text = "Getar intensitas maksimal aktif. Mari bersiap menunaikan ibadah sholat.",
                 color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
@@ -230,7 +240,7 @@ fun FullscreenAlarmScreen(
                     containerColor = accent,
                     contentColor = MaterialTheme.colorScheme.onTertiary
                 ),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
@@ -242,8 +252,8 @@ fun FullscreenAlarmScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Hentikan Getar & Tutup",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -251,13 +261,13 @@ fun FullscreenAlarmScreen(
 
             OutlinedButton(
                 onClick = onSnooze,
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text("Tunda (5 Menit)", fontSize = 15.sp)
+                Text("Tunda (5 Menit)", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
