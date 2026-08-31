@@ -94,7 +94,11 @@ class FloatingDropzoneService : Service() {
             text = "Shollu Dropzone..."
         }
         dropzoneContainer.addView(textView)
-        applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(ThemeMode.EMERALD))
+        // Initial paint uses the SAVED theme, not a hardcoded EMERALD, so NAVY/AMOLED users
+        // don't see an emerald flash before the update loop's first tick. The loop's
+        // appliedMode is seeded to the same value so its first iteration skips re-painting.
+        val initialMode = runBlocking(Dispatchers.IO) { preferences.themeMode.first() }
+        applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(initialMode))
         floatingView = dropzoneContainer
 
         // Drag & Touch handling
@@ -146,7 +150,7 @@ class FloatingDropzoneService : Service() {
             var cachedConfig: ScheduleConfigKey? = null
             var cachedTodayTimes: PrayerTimes? = null
             var cachedTomorrowTimes: PrayerTimes? = null
-            var appliedMode: ThemeMode? = null
+            var appliedMode: ThemeMode? = initialMode
 
             while (isActive) {
                 val themeMode = preferences.themeMode.first()

@@ -42,6 +42,10 @@ class FullscreenAlarmActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The alarm backdrop is an always-dark gradient (Color.Black → primary) regardless of
+        // ThemeMode, so the system-bar icons must be LIGHT even when the resolved scheme is
+        // light. SholluTheme's systemBarsBackgroundDark param pins that without fighting the
+        // theme's own icon-appearance SideEffect.
         turnScreenOnAndShowWhenLocked()
 
         val prayerName = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_NAME) ?: "Sholat"
@@ -65,7 +69,11 @@ class FullscreenAlarmActivity : ComponentActivity() {
             // Documented nested-theme exception (issues #15/#20): the ONE sanctioned nested
             // MaterialExpressiveTheme — same colors/shapes/type as the app root for the saved
             // ThemeMode, but standard() motion — an alarm must render instantly, springs off.
-            SholluTheme(themeMode = themeMode, motionScheme = MotionScheme.standard()) {
+            SholluTheme(
+                themeMode = themeMode,
+                motionScheme = MotionScheme.standard(),
+                systemBarsBackgroundDark = true
+            ) {
                 FullscreenAlarmScreen(
                     prayerName = prayerName,
                     prayerTime = prayerTime,

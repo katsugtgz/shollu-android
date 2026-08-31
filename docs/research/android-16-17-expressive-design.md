@@ -116,17 +116,17 @@ Official Compose theme: color + type + shape, plus Expressive **motion** under `
 
 Shollu schemes currently set `surfaceContainerLow` (and a subset of other roles). Other container rungs fall back to library defaults — fine, but Navy/AMOLED screens that still paint emerald/gold hex bypass the scheme entirely (AGENTS.md: ~30 hardcoded usages). Palettes belong in `Color.kt`. Compose screens should use roles.
 
-Remaining literal hex outside the palette module (current-state):
+Remaining literal hex outside the palette module (current-state after PR #25):
 
-- `FloatingDropzoneService`: `0xEE0D6A53` (+ gold stroke in the View path) — **explicitly deferred** by #12.
-- `Theme.kt` AMOLED still inlines `Color(0xFF004D40)` / `Color(0xFF80CBC4)` instead of named tokens.
-- Widget neutrals in `WidgetTheme.kt` — Glance has no `MaterialExpressiveTheme` by policy.
+- `FloatingDropzoneService`: dropzone View hex is now projected from `dropzonePalette(ThemeMode)` → `brandColors(mode).day` (`DropzoneTheme.kt`); the historic `0xEE` compositing alpha lives in `DropzoneTheme.kt`, not the service. **Resolved by #25.**
+- `Theme.kt` AMOLED now references named tokens `AmoledPrimaryContainer` / `AmoledSecondary` from `Color.kt` (no inline `Color(0xFF…)` literals). **Resolved by #25.**
+- Widget neutrals in `WidgetTheme.kt` — Glance has no `MaterialExpressiveTheme` by policy (intentional, not a hole).
 
 Navy + system dark still uses `EmeraldDarkColorScheme` (#12: do not invent NavyDark).
 
 **Dynamic color.** Still starts at API 31. `ThemeMode.DYNAMIC` uses `dynamic*ColorScheme`. No first-party doc found that Material You wallpaper extraction *changed* between 15 and 16 for apps.
 
-**Type.** M3 Expressive adds **emphasized** styles on the same role names (`display*` / `headline*` / `title*` / `body*` / `label*`) — [building with M3 Expressive](https://m3.material.io/blog/building-with-m3-expressive), [get-started](https://m3.material.io/get-started). Do not invent unofficial sizes. `Type.kt` already overrides a subset (heavier headlines). Nav labels still use raw `11.sp` (`MainActivity.kt`); fullscreen alarm still uses raw `sp`. Glance: raw `sp` is expected.
+**Type.** M3 Expressive adds **emphasized** styles on the same role names (`display*` / `headline*` / `title*` / `body*` / `label*`) — [building with M3 Expressive](https://m3.material.io/blog/building-with-m3-expressive), [get-started](https://m3.material.io/get-started). Do not invent unofficial sizes. `Type.kt` overrides a subset (heavier headlines) and defines `labelSmall` (11.sp) which the phone nav labels consume via `MaterialTheme.typography.labelSmall` (`MainActivity.kt`) — **resolved by #25**. The fullscreen alarm still uses raw `sp` for `letterSpacing` only; text sizes go through `MaterialTheme.typography` roles (`titleLarge` / `headlineMedium` / `headlineLarge` / `bodyMedium` / `titleMedium` / `labelLarge`) — **resolved by #25**. Glance: raw `sp` is expected.
 
 **Shape.** Compose [`Shapes`](https://developer.android.com/reference/kotlin/androidx/compose/material3/Shapes) tokens: `extraSmall` … `extraLarge`, plus Expressive `largeIncreased`, `extraLargeIncreased`, `extraExtraLarge`. `SholluShapes` sets through `largeIncreased = 36.dp`; does not override `extraLargeIncreased` / `extraExtraLarge` (library defaults apply). Kit’s 8/12/16/20/28 dp ladder is a **starting point, not official tokens** (kit admits this). Official Compose sample still shows classic 4/8/12/16/24 — that sample is **baseline M3**, not Expressive; prefer theme defaults + Shollu’s 16.dp+ medium.
 
@@ -194,10 +194,10 @@ Prioritized. “Do not do” items are #12 contract, not taste.
 
 ### Safe follow-ups (do not reopen #12)
 
-3. **Dropzone View hex → ThemeMode tokens** — #12 deferred. Last Compose-purge hole. Keep it a View; don’t force `MaterialExpressiveTheme` into the overlay.
-4. **Type roles leftover** — nav `11.sp`, alarm raw `sp`. Map to `labelSmall` / `headline*` / `title*` where it doesn’t clip (#12 story 44).
-5. **AMOLED inline colors in `Theme.kt`** — move to named tokens in `Color.kt`.
-6. **Hardcoded emerald/gold in Compose screens** — AGENTS.md still notes ~30 usages that bypass scheme roles (Navy/AMOLED/Dynamic). Finish the purge #12 already started; do not treat leftover hex as “Android 17 chrome.”
+3. **Dropzone View hex → ThemeMode tokens** — **done in #25** (`DropzoneTheme.kt` + `brandColors`). Keep it a View; no `MaterialExpressiveTheme` in the overlay.
+4. **Type roles leftover** — **done in #25**: nav labels use `MaterialTheme.typography.labelSmall`; alarm text sizes use `titleLarge` / `headline*` / `bodyMedium` / `labelLarge`. Only `letterSpacing` keeps raw `sp` (it is a tracking value, not a font size).
+5. **AMOLED inline colors in `Theme.kt`** — **done in #25**: moved to `AmoledPrimaryContainer` / `AmoledSecondary` tokens in `Color.kt`.
+6. **Hardcoded emerald/gold in Compose screens** — AGENTS.md still notes ~30 usages that bypass scheme roles (Navy/AMOLED/Dynamic). Finish the purge #12 already started; do not treat leftover hex as "Android 17 chrome."
 7. **material3 pin bump** — dedicated issue. α24 → Maven latest (α27 as of 2026-08-26). Gate: `verifyDependencySecurity`, `test`, `assembleDebug`, Home `ButtonGroup` + SearchBar compile. Read α25–α27 breaking notes above. Re-check the 1.12.0-beta01 leak.
 
 ### Out of scope until a **new** issue (kit wants these; #12 froze them)
