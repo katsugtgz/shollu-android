@@ -9,7 +9,7 @@ Compose presentation layer. MainActivity = single state hub; screens are dumb pa
 | Wire new screen / pass new pref flow | `MainActivity.kt` (collects ~9 DataStore flows, prop-drills repos + values) |
 | Add route | `navigation/NavRoutes.kt` — sealed `Screen(route, title, icon)`; register in `MainActivity` NavHost + bottom `items` list |
 | Location detection / GPS fallback | `MainActivity.kt` — `autoDetectLocation()` → `requestCurrentLocationFallback()` → `requestLocationManagerFallback()` |
-| Next-prayer countdown | `components/NextPrayerHeroCard.kt` — own 1s `LaunchedEffect` ticker, `plusDays(1)` past-time rollover |
+| Next-prayer countdown | `components/NextPrayerHeroCard.kt` — reads caller `clockState` (Home 1s `LaunchedEffect`); city-frame `getNextPrayerTarget` rollover |
 | Share today's schedule | `screens/home/HomeScreen.kt` `shareTodaySchedule()` (hardcodes "WIB") |
 | Monthly table / HTML export | `screens/calendar/CalendarScreen.kt` `exportSchedule()` (ACTION_SEND `text/html`) |
 | Reminder time input | `screens/scheduler/TimeFieldState.kt` |
