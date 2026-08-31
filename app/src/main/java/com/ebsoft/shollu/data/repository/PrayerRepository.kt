@@ -6,6 +6,7 @@ import com.ebsoft.shollu.engine.AstroCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
@@ -33,7 +34,13 @@ class PrayerRepository(
         val offsets: Map<String, Int>
     )
 
+    private val cacheLock = Any()
     private val calculationCache = ConcurrentHashMap<PrayerCalculationKey, PrayerTimes>()
+
+    companion object {
+        /** ~13 months of unique days; calendar browsing + city hops must not grow forever. */
+        internal const val MAX_CALCULATION_CACHE = 400
+    }
 
     /**
      * Flow pulse emitting the current date: ticks just past each natural
@@ -41,7 +48,7 @@ class PrayerRepository(
      * time / timezone change), instead of parking in one monotonic delay().
      */
     private fun midnightPulseFlow(): Flow<LocalDate> =
-        datePulseFlow(clock, pollIntervalMillis = 30_000L)
+        datePulseFlow(clock, pollIntervalMillis = 30_000L).distinctUntilChanged()
 
     override val todayPrayerTimes: Flow<PrayerTimes> = combine(
         midnightPulseFlow(),
@@ -128,8 +135,8 @@ class PrayerRepository(
             ihtiyat = ihtiyat,
             offsets = offsets
         )
-        return calculationCache.computeIfAbsent(key) {
-            AstroCalculator.calculate(
+        synchronized(cacheLock) {
+            val computed = calculationCache[key] ?: AstroCalculator.calculate(
                 date = date,
                 latitude = city.latitude,
                 longitude = city.longitude,
@@ -139,7 +146,12 @@ class PrayerRepository(
                 asrJuristic = juristic,
                 ihtiyatMinutes = ihtiyat,
                 customOffsets = offsets
-            )
+            ).also { calculationCache[key] = it }
+            if (calculationCache.size > MAX_CALCULATION_CACHE) {
+                calculationCache.clear()
+                calculationCache[key] = computed
+            }
+            return computed
         }
     }
 
@@ -163,6 +175,8 @@ class PrayerRepository(
     }
 
     override fun clearCache() {
-        calculationCache.clear()
+        synchronized(cacheLock) {
+            calculationCache.clear()
+        }
     }
 }

@@ -74,7 +74,8 @@ private val AmoledDarkColorScheme = darkColorScheme(
 )
 
 /**
- * App theme root. Color roles unchanged; the motion policy lives in [Motion.kt].
+ * App theme root. Color roles in [Color.kt]; motion policy in [Motion.kt];
+ * shape scale in [Shape.kt] (`SholluShapes`).
  *
  * Confinement policy (issue #15): expressive-surface APIs (MaterialExpressiveTheme,
  * MotionScheme) are STABLE in material3 1.5.0-alpha24, so no @OptIn is needed; if a
@@ -116,6 +117,7 @@ fun SholluTheme(
     MaterialExpressiveTheme(
         colorScheme = colorScheme,
         motionScheme = resolvedMotion,
+        shapes = SholluShapes,
         typography = Typography,
         content = content
     )

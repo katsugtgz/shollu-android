@@ -2,7 +2,6 @@ package com.ebsoft.shollu.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CheckCircle
@@ -32,7 +31,7 @@ fun PrayerCard(
     val colorScheme = MaterialTheme.colorScheme
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = if (isNext) colorScheme.primaryContainer else colorScheme.surfaceVariant.copy(alpha = 0.45f)
         ),
@@ -55,7 +54,7 @@ fun PrayerCard(
                         .size(38.dp)
                         .background(
                             if (isNext) colorScheme.onPrimaryContainer.copy(alpha = 0.12f) else colorScheme.primary.copy(alpha = 0.1f),
-                            RoundedCornerShape(12.dp)
+                            MaterialTheme.shapes.small
                         )
                 ) {
                     Icon(

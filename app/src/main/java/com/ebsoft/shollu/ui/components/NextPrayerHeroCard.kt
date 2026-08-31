@@ -3,7 +3,6 @@ package com.ebsoft.shollu.ui.components
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Schedule
@@ -21,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.receiver.AlarmTime
-import java.time.format.DateTimeFormatter
+import com.ebsoft.shollu.ui.theme.SholluLoadingIndicator
 
 @Composable
 fun NextPrayerHeroCard(
@@ -87,14 +86,15 @@ fun NextPrayerHeroCard(
     val prayerName = target?.first?.displayName?.let {
         if (targetIsTomorrow) "$it (Besok)" else it
     } ?: "Memuat jadwal…"
-    val prayerTimeText = target?.second?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "--:--"
+    val prayerTimeText = target?.second?.format(PrayerTimes.HM_FORMATTER) ?: "--:--"
+    val heroShape = MaterialTheme.shapes.extraLarge
 
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = heroShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(heroShape)
     ) {
         Box(
             modifier = Modifier
@@ -119,11 +119,14 @@ fun NextPrayerHeroCard(
                     Surface(
                         onClick = onLocationClick,
                         color = colorScheme.onPrimary.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(20.dp)
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
@@ -185,7 +188,7 @@ fun NextPrayerHeroCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.13f), RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.13f), MaterialTheme.shapes.medium)
                         .padding(vertical = 10.dp, horizontal = 14.dp)
                 ) {
                     Row(
@@ -193,15 +196,23 @@ fun NextPrayerHeroCard(
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Schedule,
-                            contentDescription = null,
-                            tint = colorScheme.onPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        if (target == null) {
+                            SholluLoadingIndicator(
+                                modifier = Modifier.size(28.dp),
+                                color = colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = null,
+                                tint = colorScheme.onPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
                         Text(
-                            text = "Sisa Waktu: $countdownText",
+                            text = if (target == null) "Memuat jadwal…" else "Sisa Waktu: $countdownText",
                             color = colorScheme.onPrimary,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
