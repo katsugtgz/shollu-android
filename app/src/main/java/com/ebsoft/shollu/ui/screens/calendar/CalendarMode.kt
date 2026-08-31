@@ -21,7 +21,7 @@ enum class CalendarMode(val label: String) {
  * and selecting any other mode moves the single selection to it. MONTHLY is the entry mode.
  *
  * Backed by snapshot state: [selected] is read directly inside composition, so a [select] call
- * must invalidate the readers or the segmented group would never visually move.
+ * must invalidate the readers or the connected toggle group would never visually move.
  */
 class CalendarModeSelector(initial: CalendarMode = CalendarMode.MONTHLY) {
     var selected: CalendarMode by mutableStateOf(initial)

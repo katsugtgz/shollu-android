@@ -14,7 +14,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
@@ -32,7 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.engine.QiblaCalculator
-import kotlin.math.abs
 
 /** Current display rotation (Surface.ROTATION_*), refreshed on configuration change. */
 @Composable
@@ -137,7 +135,6 @@ fun QiblaCompassScreen(
                 SensorManager.getOrientation(remappedMatrix, orientationValues)
                 var degree = Math.toDegrees(orientationValues[0].toDouble()).toFloat()
                 degree = (degree + 360f) % 360f
-                // Shortest angular distance low-pass smoothing avoiding 360° jump
                 val delta = ((degree - azimuth + 540f) % 360f) - 180f
                 azimuth = (azimuth + 0.15f * delta + 360f) % 360f
             }
@@ -293,7 +290,7 @@ fun QiblaCompassScreen(
         ) {
             if (!sensorAvailable) {
                 Card(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -321,7 +318,7 @@ fun QiblaCompassScreen(
                 }
             } else if (isAligned) {
                 Card(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = tertiaryColor.copy(alpha = 0.2f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -359,7 +356,7 @@ fun QiblaCompassScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {

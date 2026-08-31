@@ -9,13 +9,14 @@ Compose presentation layer. MainActivity = single state hub; screens are dumb pa
 | Wire new screen / pass new pref flow | `MainActivity.kt` (collects ~9 DataStore flows, prop-drills repos + values) |
 | Add route | `navigation/NavRoutes.kt` — sealed `Screen(route, title, icon)`; register in `MainActivity` NavHost + bottom `items` list |
 | Location detection / GPS fallback | `MainActivity.kt` — `autoDetectLocation()` → `requestCurrentLocationFallback()` → `requestLocationManagerFallback()` |
-| Next-prayer countdown | `components/NextPrayerHeroCard.kt` — own 1s `LaunchedEffect` ticker, `plusDays(1)` past-time rollover |
+| Next-prayer countdown | `components/NextPrayerHeroCard.kt` — reads caller `clockState` (Home 1s `LaunchedEffect`); city-frame `getNextPrayerTarget` rollover |
 | Share today's schedule | `screens/home/HomeScreen.kt` `shareTodaySchedule()` (hardcodes "WIB") |
 | Monthly table / HTML export | `screens/calendar/CalendarScreen.kt` `exportSchedule()` (ACTION_SEND `text/html`) |
 | Reminder time input | `screens/scheduler/TimeFieldState.kt` |
 | Settings write side-effects | `screens/settings/SettingsScreen.kt` |
 | Compass sensors / alignment | `screens/qibla/QiblaCompassScreen.kt` |
-| Theme selection | `theme/Theme.kt` (`SholluTheme`) + `theme/Color.kt` |
+| Theme selection | `theme/Theme.kt` (`SholluTheme` → `MaterialExpressiveTheme`) + `theme/Color.kt` + `theme/Motion.kt` + `theme/Shape.kt` (`SholluShapes`) |
+| Expressive wrappers | `theme/Expressive.kt` — `SholluLoadingIndicator`, `ConnectedExclusiveToggleRow` (OptIn stays here) |
 | Localized prayer names/icons | `util/PrayerUiExtensions.kt` |
 | Date locale from app language | `util/AppLocale.kt` (`rememberAppLocale()`) |
 | Alarm fullscreen UI | `alarm/FullscreenAlarmActivity.kt` |
@@ -28,8 +29,9 @@ Compose presentation layer. MainActivity = single state hub; screens are dumb pa
 - `processLocation`: reverse-Geocoder → builds `City` with `timezone = AstroCalculator.currentOffsetHours(...)` (DST-aware snapshot, NOT rawOffset), saves via `preferences.updateCity(city, isGps = true)`, then reschedules `AlarmScheduler` + updates widgets. Fixed-list picker save does the opposite: `isGps` defaults false (clears flag). Every city change = alarms + widgets refresh; keep that trio.
 - `TimeFieldState`: visible `text` is NEVER clamped — digits only, max 2 chars, so "6"/"" /"61" mid-typing stay on screen. Clamping happens only in `value` getter, read at save.
 - `CalendarScreen.monthlySchedule` memoized in `remember(yearMonth, city, method, juristic, ihtiyat, offsets)` — expensive pure recompute; any new input must join the key list. Tabs 1-2 (converter/events) take `hijriAdjustment` as plain param, not a memo key.
-- Qibla sensor listener in `DisposableEffect(displayRotation)` — re-registers on rotation change. Fallback chain: `TYPE_ROTATION_VECTOR` → `ACCELEROMETER` + `MAGNETIC_FIELD`(or `_UNCALIBRATED`) → deprecated `TYPE_ORIENTATION`. Azimuth low-pass `0.15f` via shortest-angular-distance; rotation matrix remapped per `QiblaCalculator.remapAxesForDisplayRotation`. Declination from `QiblaCalculator.magneticDeclinationDegrees`; alignment = magnetic azimuth converted to true bearing, tolerance ±3° (`diff < 3f || diff > 357f`), suppressed when `!sensorAvailable`.
-- Themes: `ThemeMode` → EMERALD (light/dark), NAVY (light only; dark falls back `EmeraldDarkColorScheme`), AMOLED (dark-only scheme), DYNAMIC (dynamic on SDK 31+, else Emerald).
+- Qibla sensor listener in `DisposableEffect(displayRotation)` — re-registers on rotation change. Fallback chain: `TYPE_ROTATION_VECTOR` → `ACCELEROMETER` + `MAGNETIC_FIELD`(or `_UNCALIBRATED`) → deprecated `TYPE_ORIENTATION`. Azimuth low-pass `0.15f` via shortest-angular-distance (no 0.4° write gate). Rotation matrix remapped per `QiblaCalculator.remapAxesForDisplayRotation`. Declination from `QiblaCalculator.magneticDeclinationDegrees`; alignment = magnetic azimuth converted to true bearing, tolerance ±3° (`diff < 3f || diff > 357f`), suppressed when `!sensorAvailable`.
+- Themes: `ThemeMode` → EMERALD (light/dark), NAVY (light only; dark falls back `EmeraldDarkColorScheme`), AMOLED (dark-only scheme), DYNAMIC (dynamic on SDK 31+, else Emerald). Root is `MaterialExpressiveTheme(colorScheme, motionScheme, shapes=SholluShapes, typography)`. Experimental Expressive APIs (`LoadingIndicator`, connected `ToggleButton`) live in `theme/Expressive.kt` wrappers — never `@OptIn` on screens.
+- Calendar mode chrome is `ConnectedExclusiveToggleRow`, not deprecated `SegmentedButton`.
 - `rememberAppLocale()` reaches DataStore by casting `context.applicationContext as? SholluApplication` — lets screens skip an `appLanguage` param. Same cast trick for `applicationScope` in SettingsScreen (parent doc covers why that scope).
 - `PrayerType` never mapped inline: use `stringResId`/`getComposableName()`/`icon` from `util/PrayerUiExtensions.kt`.
 - `FloatingDropzoneService.isRunning` (companion `StateFlow`, set in `onCreate`/`onDestroy`) is the switch truth in Settings — never track service state locally.

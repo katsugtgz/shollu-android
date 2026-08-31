@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.ebsoft.shollu.data.model.*
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.engine.HijriCalendarHelper
+import com.ebsoft.shollu.ui.theme.ConnectedExclusiveToggleRow
 import com.ebsoft.shollu.ui.util.rememberAppLocale
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.util.rememberTickMillis
@@ -76,33 +76,15 @@ fun CalendarScreen(
             .fillMaxSize()
             .padding(top = 16.dp)
     ) {
-        // Mode Selector — connected exclusive button group (SegmentedButton)
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-        ) {
-            CalendarMode.entries.forEachIndexed { index, mode ->
-                SegmentedButton(
-                    // Equal-weight segments: intrinsic-width labels can overflow the row on
-                    // narrow phones, clipping the last mode out of reach.
-                    modifier = Modifier.weight(1f),
-                    selected = modeSelector.selected == mode,
-                    onClick = { modeSelector.select(mode) },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = CalendarMode.entries.size
-                    ),
-                    label = {
-                        Text(
-                            mode.label,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                )
-            }
-        }
+        // Mode selector — connected exclusive ToggleButton group (issue #17).
+        // Equal-weight segments: intrinsic-width labels overflow the row on narrow phones.
+        ConnectedExclusiveToggleRow(
+            items = CalendarMode.entries.toList(),
+            selected = modeSelector.selected,
+            onSelect = modeSelector::select,
+            label = { it.label },
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -178,7 +160,7 @@ private fun MonthlyScheduleView(
         // Export Button
         Button(
             onClick = onExport,
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.Download, contentDescription = null)
@@ -197,7 +179,7 @@ private fun MonthlyScheduleView(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), MaterialTheme.shapes.medium)
                 .padding(8.dp)
         ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -206,7 +188,7 @@ private fun MonthlyScheduleView(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
                             .padding(vertical = 10.dp, horizontal = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -227,7 +209,7 @@ private fun MonthlyScheduleView(
                             .fillMaxWidth()
                             .background(
                                 if (isToday) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f) else Color.Transparent,
-                                RoundedCornerShape(16.dp)
+                                MaterialTheme.shapes.medium
                             )
                             .padding(vertical = 6.dp, horizontal = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -265,7 +247,7 @@ private fun DateConverterView(selectedCity: City, hijriAdjustment: Int, locale: 
             .padding(16.dp)
     ) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -288,7 +270,7 @@ private fun DateConverterView(selectedCity: City, hijriAdjustment: Int, locale: 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.medium)
                         .padding(16.dp)
                 ) {
                     Column {
@@ -333,7 +315,7 @@ private fun IslamicEventsView(hijriAdjustment: Int) {
 
         items(events) { event ->
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(
                     containerColor = if (event.isFastingDay) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                 ),
@@ -349,7 +331,7 @@ private fun IslamicEventsView(hijriAdjustment: Int) {
                             .size(40.dp)
                             .background(
                                 if (event.isFastingDay) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(16.dp)
+                                MaterialTheme.shapes.medium
                             )
                     ) {
                         Icon(
