@@ -9,18 +9,20 @@ import android.os.Build
 import android.os.IBinder
 import android.view.*
 import android.widget.TextView
-import com.ebsoft.shollu.R
+import androidx.compose.ui.graphics.toArgb
 import com.ebsoft.shollu.data.model.PrayerTimes
+import com.ebsoft.shollu.data.model.ThemeMode
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
+import com.ebsoft.shollu.ui.theme.DropzonePalette
+import com.ebsoft.shollu.ui.theme.dropzonePalette
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import java.time.format.DateTimeFormatter
 
 /** Snapshot of every preference that changes the computed prayer schedule. */
 private data class ScheduleConfigKey(
@@ -79,26 +81,20 @@ class FloatingDropzoneService : Service() {
             y = 150
         }
 
-        val inflater = LayoutInflater.from(this)
-        // Programmatic lightweight pill view
+        // Programmatic lightweight pill view. Colors come from dropzonePalette(ThemeMode)
+        // — historic emerald hex is the EMERALD row of that map, not a leftover hardcode.
         val dropzoneContainer = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             setPadding(32, 20, 32, 20)
-            val shape = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xEE0D6A53.toInt()) // Shollu emerald with transparency
-                cornerRadius = 60f
-                setStroke(2, 0xFFD4AF37.toInt()) // Gold accent border
-            }
-            background = shape
         }
 
         val textView = TextView(this).apply {
-            setTextColor(0xFFFFFFFF.toInt())
             textSize = 13f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             text = "Shollu Dropzone..."
         }
         dropzoneContainer.addView(textView)
+        applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(ThemeMode.EMERALD))
         floatingView = dropzoneContainer
 
         // Drag & Touch handling
@@ -150,8 +146,15 @@ class FloatingDropzoneService : Service() {
             var cachedConfig: ScheduleConfigKey? = null
             var cachedTodayTimes: PrayerTimes? = null
             var cachedTomorrowTimes: PrayerTimes? = null
+            var appliedMode: ThemeMode? = null
 
             while (isActive) {
+                val themeMode = preferences.themeMode.first()
+                if (themeMode != appliedMode) {
+                    appliedMode = themeMode
+                    applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(themeMode))
+                }
+
                 val city = preferences.selectedCity.first()
                 val method = preferences.calculationMethod.first()
                 val juristic = preferences.asrJuristic.first()
@@ -227,6 +230,20 @@ class FloatingDropzoneService : Service() {
             }
         }
         super.onDestroy()
+    }
+
+    private fun applyDropzonePalette(
+        container: android.widget.LinearLayout,
+        textView: TextView,
+        palette: DropzonePalette
+    ) {
+        val shape = android.graphics.drawable.GradientDrawable().apply {
+            setColor(palette.fill.toArgb())
+            cornerRadius = 60f
+            setStroke(2, palette.stroke.toArgb())
+        }
+        container.background = shape
+        textView.setTextColor(palette.onFill.toArgb())
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

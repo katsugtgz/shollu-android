@@ -27,6 +27,8 @@ val AmoledBackground = Color(0xFF000000)
 val AmoledSurface = Color(0xFF121212)
 val AmoledSurfaceCard = Color(0xFF1E1E1E)
 val AmoledPrimary = Color(0xFF26A69A)
+val AmoledPrimaryContainer = Color(0xFF004D40)
+val AmoledSecondary = Color(0xFF80CBC4)
 val AmoledAccentGold = Color(0xFFFFD54F)
 
 // Dark Theme Defaults
