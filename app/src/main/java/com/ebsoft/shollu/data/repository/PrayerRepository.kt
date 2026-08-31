@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 import java.time.YearMonth
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Hardened implementation of IPrayerRepository with in-memory caching
@@ -35,7 +34,16 @@ class PrayerRepository(
     )
 
     private val cacheLock = Any()
-    private val calculationCache = ConcurrentHashMap<PrayerCalculationKey, PrayerTimes>()
+    /** Access-order LRU; mutate only under [cacheLock] (`LinkedHashMap` is not concurrent). */
+    private val calculationCache = object : LinkedHashMap<PrayerCalculationKey, PrayerTimes>(
+        16,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<PrayerCalculationKey, PrayerTimes>
+        ): Boolean = size > MAX_CALCULATION_CACHE
+    }
 
     companion object {
         /** ~13 months of unique days; calendar browsing + city hops must not grow forever. */
@@ -136,7 +144,8 @@ class PrayerRepository(
             offsets = offsets
         )
         synchronized(cacheLock) {
-            val computed = calculationCache[key] ?: AstroCalculator.calculate(
+            calculationCache[key]?.let { return it }
+            val computed = AstroCalculator.calculate(
                 date = date,
                 latitude = city.latitude,
                 longitude = city.longitude,
@@ -146,11 +155,8 @@ class PrayerRepository(
                 asrJuristic = juristic,
                 ihtiyatMinutes = ihtiyat,
                 customOffsets = offsets
-            ).also { calculationCache[key] = it }
-            if (calculationCache.size > MAX_CALCULATION_CACHE) {
-                calculationCache.clear()
-                calculationCache[key] = computed
-            }
+            )
+            calculationCache[key] = computed
             return computed
         }
     }
