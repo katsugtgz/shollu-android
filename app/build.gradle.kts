@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    // First-party Gradle plugin — no new dependency coordinates, security gate unaffected.
+    id("jacoco")
 }
 
 android {
@@ -152,4 +154,30 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+// JVM unit-test coverage (UI layer is untested by project convention — engine/data/receiver only).
+// `./gradlew jacocoTestReport` → app/build/reports/jacoco/…
+android {
+    testOptions {
+        unitTests.all {
+            it.extensions.configure<org.gradle.testing.jacoco.plugins.JacocoTaskExtension> {
+                isIncludeNoLocationClasses = false
+            }
+        }
+    }
+}
+
+tasks.register("jacocoTestReport", org.gradle.testing.jacoco.tasks.JacocoReport::class) {
+    dependsOn("testDebugUnitTest")
+    reports {
+        xml.required.set(true)   // machine-readable: build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+        html.required.set(true)  // browsable:      build/reports/jacoco/jacocoTestReport/html/index.html
+    }
+    val excludes = listOf("**/R*", "**/R$*", "**/BuildConfig*", "**/*_Impl*", "**/*_Impl$*")
+    // AGP 9 built-in Kotlin: compiled app classes live under intermediates/built_in_kotlinc.
+    val kotlinClasses = fileTree(layout.buildDirectory.dir("intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes")) { exclude(excludes) }
+    classDirectories.setFrom(files(kotlinClasses))
+    sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
+    executionData.setFrom(fileTree(layout.buildDirectory) { include("jacoco/testDebugUnitTest.exec") })
 }
