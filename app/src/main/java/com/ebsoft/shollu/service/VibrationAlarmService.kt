@@ -18,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 class VibrationAlarmService : Service() {
 
@@ -62,6 +63,14 @@ class VibrationAlarmService : Service() {
      *  lock can never be picked up for an alarm that is already over. */
     @Volatile
     private var alarmActive = false
+
+    /**
+     * Monotonic alert token. Starts read prefs on [serviceScope] (Default) but APPLY on
+     * the main thread; the generation check is what makes an older start (slow pref read)
+     * unable to overwrite a newer waveform or delete its stop schedule. Stop bumps it too,
+     * so a stop can never be resurrected by a start that was still in flight.
+     */
+    private val alertGeneration = AtomicInteger(0)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Screen-off mid-alarm: the uptime-based 45s timer stalls in suspend, so from that
@@ -119,6 +128,7 @@ class VibrationAlarmService : Service() {
         // (or a lighter duty cycle when the vibrator lacks amplitude control).
         val hasIntensityOverride = intent?.hasExtra(EXTRA_INTENSITY_MAX) == true
         val intensityOverride = intent?.getBooleanExtra(EXTRA_INTENSITY_MAX, true) ?: true
+        val gen = alertGeneration.incrementAndGet()
         serviceScope.launch {
             val maxIntensity = try {
                 if (hasIntensityOverride) {
@@ -130,12 +140,20 @@ class VibrationAlarmService : Service() {
                 e.printStackTrace()
                 true
             }
-            startMaxVibration(prayerName, prayerTime, isPrePrayer, isNudge, maxIntensity)
+            // Apply on the main thread (autoStopHandler's looper): two starts racing on
+            // the Default dispatcher could otherwise interleave vibrate/removeCallbacks
+            // and resurrect or truncate each other's alert.
+            autoStopHandler?.post {
+                if (gen == alertGeneration.get()) {
+                    startMaxVibration(gen, prayerName, prayerTime, isPrePrayer, isNudge, maxIntensity)
+                }
+            }
         }
         return START_NOT_STICKY
     }
 
     private fun startMaxVibration(
+        gen: Int,
         prayerName: String,
         prayerTime: String,
         isPrePrayer: Boolean,
@@ -245,7 +263,9 @@ class VibrationAlarmService : Service() {
             // replaced the old pattern; the stop schedule must be replaced too.)
             autoStopHandler?.removeCallbacksAndMessages(null)
             autoStopHandler?.postDelayed({
-                stopVibrationAndSelf()
+                if (gen == alertGeneration.get()) {
+                    stopVibrationAndSelf()
+                }
             }, autoStopDelay)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -254,6 +274,9 @@ class VibrationAlarmService : Service() {
     }
 
     private fun stopVibrationAndSelf() {
+        // Invalidate any start still queued behind a slow pref read or any pending
+        // auto-stop — after this, only a NEW start (higher generation) may vibrate.
+        alertGeneration.incrementAndGet()
         alarmActive = false
         try {
             vibrator?.cancel()
