@@ -25,7 +25,10 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_REMINDER_TITLE = "extra_reminder_title"
         const val EXTRA_REMINDER_DESC = "extra_reminder_desc"
         const val EXTRA_IS_MAX_VIBRATION = "extra_is_max_vibration"
-        const val CHANNEL_ID = "shollu_scheduler_channel"
+
+        // v2: no channel-level vibration (the old id's channel buzz raced the
+        // VibrationAlarmService nudge burst; channels are immutable, hence the rename).
+        const val CHANNEL_ID = "shollu_scheduler_channel_v2"
         const val ACTION_REMINDER_ALARM = "com.ebsoft.shollu.ACTION_REMINDER_ALARM"
     }
 
@@ -33,7 +36,8 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         val reminderId = intent.getLongExtra(EXTRA_REMINDER_ID, 0)
         val title = intent.getStringExtra(EXTRA_REMINDER_TITLE) ?: "Agenda Shollu"
         val desc = intent.getStringExtra(EXTRA_REMINDER_DESC) ?: "Waktunya menjalankan agenda ibadah sunnah."
-        val isMaxVibration = intent.getBooleanExtra(EXTRA_IS_MAX_VIBRATION, true)
+        // Fail-quiet: a malformed intent must not trigger the 45s vibration service.
+        val isMaxVibration = intent.getBooleanExtra(EXTRA_IS_MAX_VIBRATION, false)
 
         createNotificationChannel(context)
 
@@ -57,6 +61,9 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(mainPendingIntent)
             .setAutoCancel(true)
+            // When the vibration service will run, it is the single haptic source —
+            // a channel-level buzz/ring on top made the alert feel doubled.
+            .apply { if (isMaxVibration) setSilent(true) }
             .build()
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -69,6 +76,8 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, title)
                 putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "")
                 putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
+                // Reminders are nudges: one short burst, not the 45s adzan-length loop.
+                putExtra(VibrationAlarmService.EXTRA_IS_NUDGE, true)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent)
@@ -112,7 +121,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Pengingat surat Al-Kahfi, puasa sunnah, dan agenda kustom"
-                enableVibration(true)
+                enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

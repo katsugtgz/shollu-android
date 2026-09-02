@@ -12,7 +12,6 @@ import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.data.repository.IPrayerRepository
-import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.*
@@ -46,8 +45,10 @@ class OngoingNotificationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        preferences = SholluPreferences(applicationContext)
-        prayerRepository = PrayerRepository(preferences)
+        // Shared application singletons (warm DataStore + LRU cache) instead of a cold
+        // preferences/repository rebuild on every service start.
+        preferences = com.ebsoft.shollu.SholluApplication.preferencesOf(applicationContext)
+        prayerRepository = com.ebsoft.shollu.SholluApplication.prayerRepositoryOf(applicationContext)
         createNotificationChannel()
     }
 

@@ -224,7 +224,10 @@ class AlarmAndSchedulerTest {
         assertEquals("com.ebsoft.shollu.ACTION_START_VIBRATION", VibrationAlarmService.ACTION_START_VIBRATION)
         assertEquals("com.ebsoft.shollu.ACTION_STOP_VIBRATION", VibrationAlarmService.ACTION_STOP_VIBRATION)
         assertEquals(2001, VibrationAlarmService.NOTIFICATION_ID)
-        assertEquals("shollu_prayer_alarm_channel", VibrationAlarmService.CHANNEL_ID)
+        // v2: silent channel (single haptic source = the service waveform); the old id is
+        // frozen with enableVibration(true) on installed devices.
+        assertEquals("shollu_prayer_alarm_channel_v2", VibrationAlarmService.CHANNEL_ID)
+        assertEquals("shollu_scheduler_channel_v2", ReminderAlarmReceiver.CHANNEL_ID)
     }
 
     @Test
