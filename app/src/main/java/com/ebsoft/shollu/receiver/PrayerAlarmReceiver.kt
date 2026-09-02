@@ -27,6 +27,8 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
             action = VibrationAlarmService.ACTION_START_VIBRATION
             putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, prayerName)
             putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, prayerTime)
+            // isPrePrayer=true doubles as the nudge flag in the service — T-10 gets one
+            // short burst, not the 45s adzan loop. No separate extra needed here.
             putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, isPrePrayer)
         }
 

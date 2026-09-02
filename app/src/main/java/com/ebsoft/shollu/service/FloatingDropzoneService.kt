@@ -2,19 +2,22 @@ package com.ebsoft.shollu.service
 
 import android.annotation.SuppressLint
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.view.*
 import android.widget.TextView
 import androidx.compose.ui.graphics.toArgb
+import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.ThemeMode
 import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.data.repository.IPrayerRepository
-import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
 import com.ebsoft.shollu.ui.theme.DropzonePalette
@@ -44,17 +47,37 @@ class FloatingDropzoneService : Service() {
 
     private var windowManager: WindowManager? = null
     private var floatingView: View? = null
+    private var countdownTextView: TextView? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private var updateJob: Job? = null
 
     private lateinit var preferences: SholluPreferences
     private lateinit var prayerRepository: IPrayerRepository
 
+    // The pill is invisible with the screen off, yet the 1 Hz loop kept doing 5 DataStore
+    // reads + a full overlay relayout every second (uptime-based, so it ran all night while
+    // the process was alive). Freeze the loop while the screen is off; the loop recomputes
+    // "now" every iteration, so it self-corrects on screen-on.
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> updateJob?.cancel()
+                Intent.ACTION_SCREEN_ON -> startCountdownLoop()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         _isRunning.value = true
-        preferences = SholluPreferences(applicationContext)
-        prayerRepository = PrayerRepository(preferences)
+        // Shared application singletons (warm DataStore + 400-entry LRU) instead of a cold
+        // repository rebuild per service start.
+        preferences = SholluApplication.preferencesOf(applicationContext)
+        prayerRepository = SholluApplication.prayerRepositoryOf(applicationContext)
+        registerReceiver(
+            screenReceiver,
+            IntentFilter(Intent.ACTION_SCREEN_OFF).apply { addAction(Intent.ACTION_SCREEN_ON) }
+        )
         createFloatingDropzone()
     }
 
@@ -94,6 +117,7 @@ class FloatingDropzoneService : Service() {
             text = "Shollu Dropzone..."
         }
         dropzoneContainer.addView(textView)
+        countdownTextView = textView
         // Palette is applied by the theme collector below, not synchronously here: a
         // runBlocking on the service-start path would block the main thread on DataStore,
         // and a hardcoded EMERALD initial paint would flash on NAVY/AMOLED users. The view
@@ -158,7 +182,17 @@ class FloatingDropzoneService : Service() {
             }
         }
 
-        // Live countdown updater
+        // Live countdown updater — but only when anyone can see it: a service restart
+        // with the screen already off would otherwise run the 1 Hz loop un-gated until
+        // the next ACTION_SCREEN_OFF. SCREEN_ON starts it when the display comes back.
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (powerManager.isInteractive) {
+            startCountdownLoop()
+        }
+    }
+
+    private fun startCountdownLoop() {
+        updateJob?.cancel() // double-launch guard (ACTION_SCREEN_ON can fire repeatedly)
         updateJob = serviceScope.launch {
             var cachedDate: java.time.LocalDate? = null
             var cachedConfig: ScheduleConfigKey? = null
@@ -223,7 +257,7 @@ class FloatingDropzoneService : Service() {
                 val targetIsTomorrow = targetDateTime.toLocalDate() != today
                 val prayerName = effectiveTargetType.displayName + if (targetIsTomorrow) " (Besok)" else ""
 
-                textView.text = String.format("%s %02d:%02d (%02d:%02d:%02d)", prayerName, effectiveTargetTime.hour, effectiveTargetTime.minute, h, m, s)
+                countdownTextView?.text = String.format("%s %02d:%02d (%02d:%02d:%02d)", prayerName, effectiveTargetTime.hour, effectiveTargetTime.minute, h, m, s)
                 delay(1000L)
             }
         }
@@ -232,6 +266,11 @@ class FloatingDropzoneService : Service() {
     override fun onDestroy() {
         _isRunning.value = false
         updateJob?.cancel()
+        try {
+            unregisterReceiver(screenReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         serviceScope.cancel()
         if (floatingView != null) {
             try {

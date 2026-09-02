@@ -77,7 +77,9 @@ data class ReminderEntity(
     val reminderType: ReminderType = ReminderType.CUSTOM,
     val daysOfWeek: DaysOfWeek = DaysOfWeek.EVERYDAY,
     val isEnabled: Boolean = true,
-    val isMaxVibration: Boolean = true,
+    // Nudge (short burst) instead of the 45s adzan-length loop — reminders used to
+    // default to the full alarm treatment, which tripled the daily vibration load.
+    val isMaxVibration: Boolean = false,
     val isPreWarningEnabled: Boolean = false,
     val preWarningMinutes: Int = 10
 ) {

@@ -21,8 +21,9 @@ AlarmManager pipeline: arm/cancel prayer + agenda-reminder alarms, GPS timezone 
 - GPS tz re-derive: only TIMEZONE_CHANGED + GPS-selected city (`shouldRederiveGpsTimezone`); `rederiveGpsTimezone` copies ONLY `timezone`, identity fields preserved.
 - Reminder path is deliberately device-local: `scheduleReminder` converts via `ZoneId.systemDefault()` — reminders are device wall-time, unlike the prayer path. Don't "unify" it onto `AlarmTime`.
 - `BootCompletedReceiver` order is load-bearing: tz re-derive → `ensureDefaultPresets` → prayer alarms → reminders (boot flag) → widget refresh → FGS restart. Builds its own graph (`SholluPreferences`, `SholluDatabase.getDatabase`) — ignores `SholluApplication` singletons.
-- `PrayerAlarmReceiver`: starts `VibrationAlarmService` (FGS on O+) first, launches `FullscreenAlarmActivity` only when `!isPrePrayer`.
-- `ReminderAlarmReceiver`: notif id `3000 + reminderId`, channel `shollu_scheduler_channel` recreated inline each fire; goAsync block reloads the reminder from DAO directly (`getReminderById`) — bypasses the repository layer.
+- `PrayerAlarmReceiver`: starts `VibrationAlarmService` (FGS on O+) first, launches `FullscreenAlarmActivity` only when `!isPrePrayer`; `isPrePrayer` doubles as the nudge flag in the service (T-10 buzzes one short burst, not the 45s loop) — no separate extra needed here.
+- `ReminderAlarmReceiver`: notif id `3000 + reminderId`, channel `shollu_scheduler_channel_v2` recreated inline each fire; goAsync block reloads the reminder from DAO directly (`getReminderById`) — bypasses the repository layer.
+- Haptics have ONE source: the explicit Vibrator waveform in `VibrationAlarmService`. The alarm channel (`shollu_prayer_alarm_channel_v2`) is fully silent (`setSound(null,null)` + `enableVibration(false)`); the scheduler channel (`shollu_scheduler_channel_v2`) only drops channel-level vibration and keeps its default sound. Never re-add channel-level vibration — it raced the waveform on the same vibrator (random-feel buzz) and the old ids are immutable on installed devices. Reminder notifications are always silent and always trigger the nudge burst (the vibration-less channel leaves the service as the only haptic); `isMaxVibration` selects nudge intensity — default `false`, seeded presets still opt in.
 
 ## ANTI-PATTERNS
 

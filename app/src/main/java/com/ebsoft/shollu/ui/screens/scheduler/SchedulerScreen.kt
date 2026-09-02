@@ -129,7 +129,7 @@ fun SchedulerScreen(
                         reminderType = ReminderType.CUSTOM,
                         daysOfWeek = DaysOfWeek.fromString(days),
                         isEnabled = true,
-                        isMaxVibration = true
+                        isMaxVibration = false
                     )
                     val id = reminderRepository.insertReminder(newReminder)
                     val saved = if (id > 0) newReminder.copy(id = id) else newReminder

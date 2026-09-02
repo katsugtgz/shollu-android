@@ -13,6 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,10 +59,17 @@ fun HomeScreen(
     // date (only at city-midnight). Reading the raw state in the body instead would re-run
     // the whole screen — every PrayerCard — once per second.
     val clock = remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            clock.value = System.currentTimeMillis()
-            delay(1000L)
+    // repeatOnLifecycle(STARTED): the 1 Hz write stops when the screen/app leaves the
+    // foreground instead of ticking ~86k times/day against a composition nobody sees
+    // (the START_STICKY ongoing service keeps this process alive). First tick after
+    // resume re-syncs the clock immediately.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                clock.value = System.currentTimeMillis()
+                delay(1000L)
+            }
         }
     }
 

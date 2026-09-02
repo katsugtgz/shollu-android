@@ -20,10 +20,8 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
-import com.ebsoft.shollu.data.preferences.SholluPreferences
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.data.repository.IPrayerRepository
-import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.flow.first
 import java.time.LocalTime
@@ -36,8 +34,12 @@ private fun dayNight(day: Color, night: Color) = androidx.glance.color.ColorProv
 class SholluAppWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val preferences = SholluPreferences(context)
-        val prayerRepository: IPrayerRepository = PrayerRepository(preferences)
+        // Shared application singletons (warm DataStore + LRU cache) instead of a cold
+        // preferences/repository rebuild on every widget render; falls back to isolated
+        // construction where the application is not Shollu's (tests, preview hosts).
+        val preferences = com.ebsoft.shollu.SholluApplication.preferencesOf(context)
+        val prayerRepository: IPrayerRepository =
+            com.ebsoft.shollu.SholluApplication.prayerRepositoryOf(context)
 
         val city = preferences.selectedCity.first()
         val method = preferences.calculationMethod.first()

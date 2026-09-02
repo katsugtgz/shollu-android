@@ -22,7 +22,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
         │   ├── engine/          # PURE Kotlin math (AstroCalculator/QiblaCalculator/HijriCalendarHelper) — zero Android imports, keep it that way
         │   ├── data/            # Room + DataStore + repository seams → see data/AGENTS.md
         │   ├── receiver/        # alarm pipeline: AlarmScheduler, AlarmTime, receivers → see receiver/AGENTS.md
-        │   ├── service/         # foreground services (FOREGROUND_SERVICE_TYPE_SPECIAL_USE): OngoingNotification, VibrationAlarm (45s auto-stop, 60s wakelock cap), FloatingDropzone
+        │   ├── service/         # foreground services (FOREGROUND_SERVICE_TYPE_SPECIAL_USE): OngoingNotification, VibrationAlarm (45s auto-stop cap for prayer entry, ~2.75s for nudges; 60s wakelock cap, silent _v2 channel — app waveform is the only haptic), FloatingDropzone (loop frozen while screen off)
         │   ├── widget/          # SholluAppWidget.kt (Glance): self-contained, builds own prefs+repo; updateSholluWidgets() called from app/receiver
         │   └── ui/              # Compose-only UI → see ui/AGENTS.md
         ├── main/res/raw/cities.json  # 63-city seed, loaded by CityRepository (Gson)
