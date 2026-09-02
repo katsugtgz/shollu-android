@@ -65,12 +65,18 @@ class VibrationAlarmService : Service() {
     private var alarmActive = false
 
     /**
-     * Monotonic alert token. Starts read prefs on [serviceScope] (Default) but APPLY on
-     * the main thread; the generation check is what makes an older start (slow pref read)
-     * unable to overwrite a newer waveform or delete its stop schedule. Stop bumps it too,
-     * so a stop can never be resurrected by a start that was still in flight.
+     * Monotonic token issued per start intent. Starts read prefs on [serviceScope]
+     * (Default) but APPLY on the main thread; the issued-vs-applied split is what keeps
+     * both races closed:
+     * - an older start (slow pref read) cannot overwrite a newer waveform (apply checks
+     *   [alertGeneration]),
+     * - a NEW start cannot silence the CURRENT alert's auto-stop before the replacement
+     *   actually applies — the pending stop checks [appliedGeneration] and still fires at
+     *   the old deadline if the replacement is late (the 45s cap is never exceeded).
+     * Stop invalidates both, so a stop can never be resurrected by an in-flight start.
      */
     private val alertGeneration = AtomicInteger(0)
+    private val appliedGeneration = AtomicInteger(0)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Screen-off mid-alarm: the uptime-based 45s timer stalls in suspend, so from that
@@ -258,12 +264,18 @@ class VibrationAlarmService : Service() {
             } else {
                 45_000L
             }
+            // This alert is now the one vibrating: publish its generation BEFORE replacing
+            // the stop schedule, so any still-queued stop of the previous alert becomes a
+            // no-op the moment ownership transfers.
+            appliedGeneration.set(gen)
             // A second alarm inside the first's stop window must not inherit the earlier
             // deadline — it would cut the newer waveform short. (vibrate() above already
             // replaced the old pattern; the stop schedule must be replaced too.)
             autoStopHandler?.removeCallbacksAndMessages(null)
             autoStopHandler?.postDelayed({
-                if (gen == alertGeneration.get()) {
+                // Checks the APPLIED generation: still the owner when the deadline lands,
+                // so the cap holds even if a newer start's pref read is still in flight.
+                if (gen == appliedGeneration.get()) {
                     stopVibrationAndSelf()
                 }
             }, autoStopDelay)
@@ -277,6 +289,7 @@ class VibrationAlarmService : Service() {
         // Invalidate any start still queued behind a slow pref read or any pending
         // auto-stop — after this, only a NEW start (higher generation) may vibrate.
         alertGeneration.incrementAndGet()
+        appliedGeneration.incrementAndGet()
         alarmActive = false
         try {
             vibrator?.cancel()
