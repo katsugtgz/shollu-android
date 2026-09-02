@@ -35,6 +35,12 @@ class VibrationAlarmService : Service() {
          * reminders) so a nudge never mimics the adzan alert.
          */
         const val EXTRA_IS_NUDGE = "extra_is_nudge"
+
+        /**
+         * Per-alert intensity override (e.g. a reminder's own max-vibration toggle).
+         * Absent = fall back to the global "Getar Intensitas Maksimal" preference.
+         */
+        const val EXTRA_INTENSITY_MAX = "extra_intensity_max"
         const val NOTIFICATION_ID = 2001
 
         /**
@@ -107,12 +113,19 @@ class VibrationAlarmService : Service() {
         // (agenda reminders); they never set it to downgrade a real prayer alarm.
         val isNudge = isPrePrayer || (intent?.getBooleanExtra(EXTRA_IS_NUDGE, false) ?: false)
 
-        // Read the "Getar Intensitas Maksimal" preference (runBlocking-free) before choosing
+        // Intensity: per-alert override (agenda reminder toggle) or the global
+        // "Getar Intensitas Maksimal" preference, read runBlocking-free before choosing
         // the waveform: max -> explicit 255-amplitude pattern, gentle -> scaled amplitude
         // (or a lighter duty cycle when the vibrator lacks amplitude control).
+        val hasIntensityOverride = intent?.hasExtra(EXTRA_INTENSITY_MAX) == true
+        val intensityOverride = intent?.getBooleanExtra(EXTRA_INTENSITY_MAX, true) ?: true
         serviceScope.launch {
             val maxIntensity = try {
-                SholluApplication.preferencesOf(applicationContext).isMaxVibrationEnabled.first()
+                if (hasIntensityOverride) {
+                    intensityOverride
+                } else {
+                    SholluApplication.preferencesOf(applicationContext).isMaxVibrationEnabled.first()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 true
@@ -227,6 +240,10 @@ class VibrationAlarmService : Service() {
             } else {
                 45_000L
             }
+            // A second alarm inside the first's stop window must not inherit the earlier
+            // deadline — it would cut the newer waveform short. (vibrate() above already
+            // replaced the old pattern; the stop schedule must be replaced too.)
+            autoStopHandler?.removeCallbacksAndMessages(null)
             autoStopHandler?.postDelayed({
                 stopVibrationAndSelf()
             }, autoStopDelay)

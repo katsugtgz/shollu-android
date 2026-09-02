@@ -61,29 +61,31 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(mainPendingIntent)
             .setAutoCancel(true)
-            // When the vibration service will run, it is the single haptic source —
-            // a channel-level buzz/ring on top made the alert feel doubled.
-            .apply { if (isMaxVibration) setSilent(true) }
+            // The v2 channel is vibration-less and the nudge service always runs (below),
+            // so the notification itself must be silent — one haptic source, never two.
+            .setSilent(true)
             .build()
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify((3000 + reminderId).toInt(), notification)
 
-        // Trigger vibration if requested
-        if (isMaxVibration) {
-            val serviceIntent = Intent(context, VibrationAlarmService::class.java).apply {
-                action = VibrationAlarmService.ACTION_START_VIBRATION
-                putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, title)
-                putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "")
-                putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
-                // Reminders are nudges: one short burst, not the 45s adzan-length loop.
-                putExtra(VibrationAlarmService.EXTRA_IS_NUDGE, true)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
+        // Haptic: ALWAYS the nudge service — with the v2 channel vibration-less, this is
+        // the only haptic a reminder gets, so it must not be gated behind the intensity
+        // preference. isMaxVibration selects the intensity (max pattern vs gentle).
+        val serviceIntent = Intent(context, VibrationAlarmService::class.java).apply {
+            action = VibrationAlarmService.ACTION_START_VIBRATION
+            putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, title)
+            putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "")
+            putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
+            // Reminders are nudges: one short burst, not the 45s adzan-length loop.
+            putExtra(VibrationAlarmService.EXTRA_IS_NUDGE, true)
+            // Per-reminder intensity, not the global preference.
+            putExtra(VibrationAlarmService.EXTRA_INTENSITY_MAX, isMaxVibration)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
         }
 
         // Reschedule next recurrence in background with goAsync() lifecycle protection
