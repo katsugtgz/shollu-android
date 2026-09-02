@@ -14,7 +14,7 @@ import java.time.LocalTime
 class PrayerTimesFormatTest {
 
     @Test
-    fun formattedTimesAreZeroPaddedHHmm() {
+    fun testFormattedTimesAreZeroPaddedHHmm() {
         val times = PrayerTimes(
             date = LocalDate.of(2026, 6, 1),
             imsak = LocalTime.of(4, 5),
@@ -39,7 +39,7 @@ class PrayerTimesFormatTest {
     }
 
     @Test
-    fun midnightFormatsAs0000() {
+    fun testMidnightFormatsAs0000() {
         val times = PrayerTimes(
             date = LocalDate.of(2026, 6, 1),
             imsak = LocalTime.MIDNIGHT,

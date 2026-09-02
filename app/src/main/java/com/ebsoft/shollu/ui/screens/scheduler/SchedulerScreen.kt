@@ -44,6 +44,9 @@ fun SchedulerScreen(
                 Icon(Icons.Default.Add, contentDescription = "Tambah Pengingat")
             }
         },
+        // Nested inside MainActivity's Scaffold, which already applies the system-bar
+        // insets to its content — zero these out or the status/nav insets stack twice.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
         LazyColumn(

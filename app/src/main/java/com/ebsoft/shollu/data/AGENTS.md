@@ -20,7 +20,7 @@ Room DB + DataStore prefs + repositories (prayer calc cache, city seed) + pure d
 - `ReminderType` (5 presets + CUSTOM) and `DaysOfWeek` live in `ReminderEntity.kt`, not separate files. `DaysOfWeek` is a value object over `rawValue: String` — `"*"` (everyday), `"ONCE"`, or CSV `"1,4"` (1=Mon…7=Sun; out-of-range dropped in `daysSet`).
 - `model/Reminder.kt` is `typealias Reminder = ReminderEntity` — one shape everywhere, no mapper.
 - Type converters never throw: null/blank/unknown → `CUSTOM` / `"*"` (via `fromString` companions).
-- `CityDao.getAllCities()` orders `country = 'Indonesia' DESC, name ASC` — Indonesia-first is SQL, not UI. Search LIKEs both `name` and `province`.
+- `CityDao.getAllCities()` orders `country = 'Indonesia' DESC, name ASC` — Indonesia-first is SQL, not UI. City search is client-side: `filterCities` in `ui/screens/settings/LocationPickerDialog.kt` ANDs whitespace-split terms against `name` and `province` (Locale.ROOT, case-insensitive); there is no SQL LIKE path.
 - `ReminderDao.getAllReminders()` orders by `timeHour, timeMinute` — UI timeline depends on this order.
 - `SholluPreferences`: every read is `safeDataStore.mapDistinct { prefs[KEY] ?: default }` (`map` + `distinctUntilChanged`). DataStore emits the full snapshot on any key write; without distinct, unrelated toggles retrigger every mapped Flow. Defaults: Jakarta (-6.2088, 106.8456, elev 8.0, tz 7.0), `KEMENAG_RI`, asr `STANDARD`, ihtiyat 2, hijri 0, pre-prayer 10, iqomah 10, theme `EMERALD`, lang `INDONESIAN`, per-prayer offsets 0. Enum reads wrap `valueOf` in try/catch → default enum.
 - `IOException` on DataStore read → `emit(emptyPreferences())` (defaults surface); other exceptions rethrow. Corruption → `ReplaceFileCorruptionHandler` resets to empty.
