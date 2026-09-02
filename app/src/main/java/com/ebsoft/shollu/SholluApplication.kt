@@ -80,6 +80,14 @@ class SholluApplication : Application() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+            // Upgrade from the legacy (vibrating, dinging) ids: a user who lowered or
+            // blocked a legacy channel keeps that choice — importance is immutable
+            // app-side after creation, so it must be copied BEFORE the v2 channel is
+            // created. The legacy entries are deleted below so Settings shows no dead
+            // duplicates.
+            val legacyAlarm = manager.getNotificationChannel("shollu_prayer_alarm_channel")
+            val legacyScheduler = manager.getNotificationChannel("shollu_scheduler_channel")
+
             // Silent alarm channel: VibrationAlarmService's explicit Vibrator waveform is
             // the single haptic source. The old id's enableVibration raced the waveform on
             // the same vibrator and layered a stock ding on the notification stream — the
@@ -92,6 +100,8 @@ class SholluApplication : Application() {
                 description = getString(R.string.channel_prayer_alarm_desc)
                 setSound(null, null)
                 enableVibration(false)
+                legacyAlarm?.importance?.takeIf { it < NotificationManager.IMPORTANCE_HIGH }
+                    ?.let { importance = it }
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
 
@@ -116,10 +126,15 @@ class SholluApplication : Application() {
             ).apply {
                 description = getString(R.string.channel_scheduler_desc)
                 enableVibration(false)
+                legacyScheduler?.importance?.takeIf { it < NotificationManager.IMPORTANCE_HIGH }
+                    ?.let { importance = it }
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
 
             manager.createNotificationChannels(listOf(prayerAlarmChannel, ongoingChannel, schedulerChannel))
+
+            legacyAlarm?.let { manager.deleteNotificationChannel(it.id) }
+            legacyScheduler?.let { manager.deleteNotificationChannel(it.id) }
         }
     }
 

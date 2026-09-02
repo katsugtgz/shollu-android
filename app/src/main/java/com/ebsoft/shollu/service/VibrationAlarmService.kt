@@ -130,6 +130,11 @@ class VibrationAlarmService : Service() {
         maxIntensity: Boolean
     ) {
         try {
+            // Armed BEFORE any early-exit/throw window: SCREEN_OFF in the gap between
+            // entering this method and vibrate() must still be able to pick the
+            // wakelock up, or a screen-off-at-fire alarm can buzz past its stop timer.
+            alarmActive = true
+
             // The wakelock only matters when the screen is off (the display otherwise
             // holds the CPU); ACTION_SCREEN_OFF mid-alarm picks it up then.
             if (!powerManager.isInteractive && wakeLock?.isHeld == false) {
@@ -213,12 +218,18 @@ class VibrationAlarmService : Service() {
                 @Suppress("DEPRECATION")
                 vibrator?.vibrate(waveform.timings, waveform.repeatIndex)
             }
-            alarmActive = true
 
-            // Auto stop after 45 seconds to prevent excessive battery/motor heat
+            // Auto stop: nudges end with their (one-shot) waveform — a 2.5s buzz should
+            // not keep the FGS notification up for the alarm-length window. Prayer
+            // entry keeps the 45s cap (battery/motor heat guard).
+            val autoStopDelay = if (isNudge) {
+                (waveform.timings.sum() + 250L).coerceAtMost(45_000L)
+            } else {
+                45_000L
+            }
             autoStopHandler?.postDelayed({
                 stopVibrationAndSelf()
-            }, 45_000L)
+            }, autoStopDelay)
         } catch (e: Exception) {
             e.printStackTrace()
             stopVibrationAndSelf()
