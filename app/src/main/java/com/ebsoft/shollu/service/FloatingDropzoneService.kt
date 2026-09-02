@@ -94,11 +94,11 @@ class FloatingDropzoneService : Service() {
             text = "Shollu Dropzone..."
         }
         dropzoneContainer.addView(textView)
-        // Initial paint uses the SAVED theme, not a hardcoded EMERALD, so NAVY/AMOLED users
-        // don't see an emerald flash before the update loop's first tick. The loop's
-        // appliedMode is seeded to the same value so its first iteration skips re-painting.
-        val initialMode = runBlocking(Dispatchers.IO) { preferences.themeMode.first() }
-        applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(initialMode))
+        // Palette is applied by the theme collector below, not synchronously here: a
+        // runBlocking on the service-start path would block the main thread on DataStore,
+        // and a hardcoded EMERALD initial paint would flash on NAVY/AMOLED users. The view
+        // carries a neutral placeholder for the (sub-frame on a warm store) moment until
+        // the collector's first emission applies the saved palette.
         floatingView = dropzoneContainer
 
         // Drag & Touch handling
@@ -144,21 +144,28 @@ class FloatingDropzoneService : Service() {
 
         windowManager?.addView(floatingView, params)
 
+        // Theme painter: ONE collect on the shared scope repaints only on an actual
+        // ThemeMode change — no runBlocking on the start path, no per-tick DataStore
+        // flow re-activation. appliedMode starts null so the first emission always
+        // paints the saved palette over the neutral placeholder.
+        var appliedMode: ThemeMode? = null
+        serviceScope.launch {
+            preferences.themeMode.collect { mode ->
+                if (mode != appliedMode) {
+                    appliedMode = mode
+                    applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(mode))
+                }
+            }
+        }
+
         // Live countdown updater
         updateJob = serviceScope.launch {
             var cachedDate: java.time.LocalDate? = null
             var cachedConfig: ScheduleConfigKey? = null
             var cachedTodayTimes: PrayerTimes? = null
             var cachedTomorrowTimes: PrayerTimes? = null
-            var appliedMode: ThemeMode? = initialMode
 
             while (isActive) {
-                val themeMode = preferences.themeMode.first()
-                if (themeMode != appliedMode) {
-                    appliedMode = themeMode
-                    applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(themeMode))
-                }
-
                 val city = preferences.selectedCity.first()
                 val method = preferences.calculationMethod.first()
                 val juristic = preferences.asrJuristic.first()

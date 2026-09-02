@@ -75,10 +75,14 @@ fun NextPrayerHeroCard(
     // its contrast against the whole gradient.
     val colorScheme = MaterialTheme.colorScheme
     val heroGradientStart = colorScheme.primary
-    val heroGradientEnd = if (colorScheme.onPrimary.luminance() < colorScheme.primary.luminance()) {
-        lerp(colorScheme.primary, Color.White, 0.45f)
-    } else {
-        lerp(colorScheme.primary, Color.Black, 0.45f)
+    // remembered on the scheme: this card recomposes once per second with the countdown
+    // tick, and the derivation (two luminance() passes + lerp) is invariant between themes.
+    val heroGradientEnd = remember(colorScheme) {
+        if (colorScheme.onPrimary.luminance() < colorScheme.primary.luminance()) {
+            lerp(colorScheme.primary, Color.White, 0.45f)
+        } else {
+            lerp(colorScheme.primary, Color.Black, 0.45f)
+        }
     }
     // After today's last valid major the target is TOMORROW's slot — say so, or the name and
     // time read as today's prayer.

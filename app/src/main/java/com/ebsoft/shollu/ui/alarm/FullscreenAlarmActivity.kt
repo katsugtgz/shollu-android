@@ -33,7 +33,6 @@ import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.theme.SholluTheme
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -58,10 +57,11 @@ class FullscreenAlarmActivity : ComponentActivity() {
         val timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
         // Saved ThemeMode (issue #20): the alarm must match the app's theme the user picked,
         // not a hardcoded default. Read synchronously — a collect-with-default would flash the
-        // Emerald scheme over the lockscreen before the saved mode lands. Uses the
-        // application-scoped singleton (not a fresh SholluPreferences) so the DataStore
-        // instance — and any warm file cache — is the one the rest of the app already used.
-        val themeMode: ThemeMode = runBlocking(Dispatchers.IO) {
+        // Emerald scheme over the lockscreen before the saved mode lands. The block is bounded
+        // in practice: this process can only be serving an alarm after Application.onCreate,
+        // whose boot chain (arm alarms → ongoing notification) has already read the same
+        // application-scoped singleton, so .first() hits the warm in-memory DataStore cache.
+        val themeMode: ThemeMode = runBlocking {
             (application as SholluApplication).preferences.themeMode.first()
         }
 
@@ -145,18 +145,22 @@ fun FullscreenAlarmScreen(
         ),
         label = "pulseScale"
     )
+    // The backdrop depends only on `brand`, never on the pulse — remembering it keeps the
+    // per-frame recomposition (the .scale read below) from reallocating a Color + Brush
+    // at ~60fps for the whole alarm duration.
+    val backdrop = remember(brand) {
+        Brush.verticalGradient(
+            colors = listOf(
+                lerp(Color.Black, brand, 0.30f),
+                Color.Black
+            )
+        )
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        lerp(Color.Black, brand, 0.30f),
-                        Color.Black
-                    )
-                )
-            )
+            .background(backdrop)
             .systemBarsPadding()
             .padding(24.dp),
         contentAlignment = Alignment.Center

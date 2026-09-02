@@ -78,8 +78,9 @@ fun CalendarScreen(
     ) {
         // Mode selector — connected exclusive ToggleButton group (issue #17).
         // Equal-weight segments: intrinsic-width labels overflow the row on narrow phones.
+        val calendarModes = remember { CalendarMode.entries.toList() }
         ConnectedExclusiveToggleRow(
-            items = CalendarMode.entries.toList(),
+            items = calendarModes,
             selected = modeSelector.selected,
             onSelect = modeSelector::select,
             label = { it.label },
