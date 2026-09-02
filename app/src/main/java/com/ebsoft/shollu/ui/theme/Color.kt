@@ -47,6 +47,7 @@ val GoldOnTertiary = Color(0xFF402D00)
 val EmeraldSecondaryContainer = Color(0xFFBCEADB)
 val EmeraldOnSecondaryContainer = Color(0xFF002019)
 val EmeraldSurfaceContainerLow = Color(0xFFF4F8F5)
+val EmeraldSurfaceContainerHigh = Color(0xFFEBF1EC)
 val EmeraldOutlineVariant = Color(0xFFDBE5DE)
 
 // Dark-theme container/surface roles (Emerald dark + its NAVY-dark fallback).
@@ -54,13 +55,19 @@ val DarkOnPrimaryContainer = Color(0xFFA3F2D4)
 val DarkSecondaryContainer = Color(0xFF3B4A42)
 val DarkOnSecondaryContainer = Color(0xFFBCEADB)
 val DarkSurfaceContainerLow = Color(0xFF171B19)
+val DarkSurfaceContainerHigh = Color(0xFF1F2422)
+val DarkSurfaceVariant = Color(0xFF232926)
 val DarkOutlineVariant = Color(0xFF3F493F)
 
 // Royal Navy container/surface roles (light).
 val NavySecondaryContainer = Color(0xFFD9E2F5)
 val NavyOnSecondaryContainer = Color(0xFF101C33)
 val NavyOnPrimaryContainer = Color(0xFF0A1E3C)
+val NavySurface = Color(0xFFF9FAFC)
+val NavyBackground = Color(0xFFF9FAFC)
+val NavySurfaceVariant = Color(0xFFE0E6EE)
 val NavySurfaceContainerLow = Color(0xFFF5F7FA)
+val NavySurfaceContainerHigh = Color(0xFFEDF0F5)
 val NavyOutlineVariant = Color(0xFFD9E0E8)
 
 // Midnight AMOLED container/surface roles.
@@ -68,4 +75,5 @@ val AmoledOnPrimaryContainer = Color(0xFF80CBC4)
 val AmoledSecondaryContainer = Color(0xFF1C2B26)
 val AmoledOnSecondaryContainer = Color(0xFF80CBC4)
 val AmoledSurfaceContainerLow = Color(0xFF0F1211)
+val AmoledSurfaceContainerHigh = Color(0xFF232323)
 val AmoledOutlineVariant = Color(0xFF24302B)

@@ -37,6 +37,7 @@ private val EmeraldLightColorScheme = lightColorScheme(
     surface = EmeraldSurface,
     surfaceVariant = EmeraldSurfaceVariant,
     surfaceContainerLow = EmeraldSurfaceContainerLow,
+    surfaceContainerHigh = EmeraldSurfaceContainerHigh,
     outlineVariant = EmeraldOutlineVariant
 )
 
@@ -52,7 +53,9 @@ private val EmeraldDarkColorScheme = darkColorScheme(
     onTertiary = GoldOnTertiary,
     background = DarkBackground,
     surface = DarkSurface,
+    surfaceVariant = DarkSurfaceVariant,
     surfaceContainerLow = DarkSurfaceContainerLow,
+    surfaceContainerHigh = DarkSurfaceContainerHigh,
     outlineVariant = DarkOutlineVariant
 )
 
@@ -66,7 +69,11 @@ private val NavyLightColorScheme = lightColorScheme(
     onSecondaryContainer = NavyOnSecondaryContainer,
     tertiary = NavyGold,
     onTertiary = GoldOnTertiary,
+    background = NavyBackground,
+    surface = NavySurface,
+    surfaceVariant = NavySurfaceVariant,
     surfaceContainerLow = NavySurfaceContainerLow,
+    surfaceContainerHigh = NavySurfaceContainerHigh,
     outlineVariant = NavyOutlineVariant
 )
 
@@ -84,6 +91,7 @@ private val AmoledDarkColorScheme = darkColorScheme(
     surface = AmoledSurface,
     surfaceVariant = AmoledSurfaceCard,
     surfaceContainerLow = AmoledSurfaceContainerLow,
+    surfaceContainerHigh = AmoledSurfaceContainerHigh,
     outlineVariant = AmoledOutlineVariant
 )
 
@@ -135,15 +143,16 @@ fun SholluTheme(
     // Edge-to-edge (PR #25) made the status/navigation bars transparent, so their icon
     // appearance must follow the EFFECTIVE bar-background darkness — not the OS night mode.
     // Without this, an in-app dark/AMOLED theme under OS-light shows dark icons on a dark
-    // bar. Light icons (isAppearanceLightStatusBars = true) read on a dark background.
+    // bar. isAppearanceLight*Bars=true means a LIGHT bar (dark icons); our bars are dark
+    // whenever [barsDark] is true, so the flag must be its inverse.
     val barsDark = systemBarsBackgroundDark ?: darkScheme
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             (view.context as? Activity)?.window?.let { window ->
                 val controller = WindowCompat.getInsetsController(window, view)
-                controller.isAppearanceLightStatusBars = barsDark
-                controller.isAppearanceLightNavigationBars = barsDark
+                controller.isAppearanceLightStatusBars = !barsDark
+                controller.isAppearanceLightNavigationBars = !barsDark
             }
         }
     }
