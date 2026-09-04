@@ -160,7 +160,155 @@ jobs:
     - name: Build AAB
       run: ./gradlew bundleRelease --stacktrace
       continue-on-error: false
-    
+
+    # =====================================================================
+    # Release artifact verification — a broken APK must NEVER reach users.
+    # Guards against: signing-key drift (INSTALL_FAILED_UPDATE_INCOMPATIBLE),
+    # versionCode regressions (VERSION_DOWNGRADE), misalignment on 16 KB-page
+    # devices, debuggable/unsigned artifacts, wrong version stamped.
+    # Runs BEFORE the GitHub Release is created — failure aborts publishing.
+    # =====================================================================
+
+    - name: Download previous release APK (update-path baseline)
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Latest release that exists BEFORE this one = the baseline users have installed
+        PREV_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+        if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "${{ github.ref_name }}" ]; then
+          echo "PREV_TAG=" >> $GITHUB_ENV
+          echo "No previous release found — fresh-install test only"
+        else
+          mkdir -p /tmp/prev-release
+          if gh release download "$PREV_TAG" --pattern '*.apk' --dir /tmp/prev-release; then
+            echo "PREV_TAG=$PREV_TAG" >> $GITHUB_ENV
+            echo "PREV_APK=/tmp/prev-release/app-release.apk" >> $GITHUB_ENV
+            echo "Baseline: $PREV_TAG"
+          else
+            echo "PREV_TAG=" >> $GITHUB_ENV
+            echo "::warning::Previous release $PREV_TAG has no APK asset — skipping update-path checks"
+          fi
+        fi
+
+    - name: Static artifact checks (signature, version, alignment, debuggable)
+      run: |
+        BT="$ANDROID_HOME/build-tools/36.0.0"
+        NEW_APK=$(ls app/build/outputs/apk/release/app-release*.apk | head -1)
+        echo "NEW_APK=$NEW_APK" >> $GITHUB_ENV
+        FAIL=""
+
+        # 1. APK signature must verify, and its signer cert is the continuity anchor
+        "$BT/apksigner" verify --print-certs "$NEW_APK" > /tmp/new-certs.txt || FAIL="apksigner verify failed"
+        NEW_CERT=$(sed -n 's/Signer #1 certificate SHA-256 digest: //p' /tmp/new-certs.txt)
+        echo "New APK signer SHA-256: $NEW_CERT"
+
+        # 2. Signing-key continuity: same cert as the previous published release.
+        #    A different key means no user can UPDATE over their existing install
+        #    (INSTALL_FAILED_UPDATE_INCOMPATIBLE — "App not installed").
+        if [ -n "$PREV_APK" ]; then
+          "$BT/apksigner" verify --print-certs "$PREV_APK" > /tmp/prev-certs.txt || FAIL="prev apksigner verify failed"
+          PREV_CERT=$(sed -n 's/Signer #1 certificate SHA-256 digest: //p' /tmp/prev-certs.txt)
+          echo "Previous release signer SHA-256: $PREV_CERT"
+          if [ -n "$NEW_CERT" ] && [ "$NEW_CERT" != "$PREV_CERT" ]; then
+            echo "::error::SIGNING KEY CHANGED since $PREV_TAG — users cannot update over existing installs"
+            FAIL="signing key drift"
+          fi
+        fi
+
+        # 3. versionCode/versionName stamped into the APK must match the tag exactly
+        BADGING=$("$BT/aapt" dump badging "$NEW_APK" | head -1)
+        echo "$BADGING"
+        APK_VCODE=$(echo "$BADGING" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+        APK_VNAME=$(echo "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+        if [ "$APK_VCODE" != "$RELEASE_VERSION_CODE" ] || [ "$APK_VNAME" != "$RELEASE_VERSION_NAME" ]; then
+          echo "::error::APK stamp mismatch: got versionCode=$APK_VCODE versionName=$APK_VNAME, expected $RELEASE_VERSION_CODE/$RELEASE_VERSION_NAME"
+          FAIL="version stamp mismatch"
+        fi
+
+        # 4. versionCode must strictly increase over the previous release (no downgrades)
+        if [ -n "$PREV_APK" ]; then
+          PREV_BADGING=$("$BT/aapt" dump badging "$PREV_APK" | head -1)
+          PREV_VCODE=$(echo "$PREV_BADGING" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+          echo "versionCode: new=$APK_VCODE previous=$PREV_VCODE"
+          if [ "${APK_VCODE:-0}" -le "${PREV_VCODE:-0}" ]; then
+            echo "::error::versionCode did not increase ($PREV_VCODE -> $APK_VCODE) — installs would fail with VERSION_DOWNGRADE"
+            FAIL="versionCode regression"
+          fi
+        fi
+
+        # 5. 16 KB page alignment of uncompressed .so entries (Android 15+/16 devices)
+        "$BT/zipalign" -c -P 16 4 "$NEW_APK" || FAIL="16KB alignment failed"
+
+        # 6. Release build must not be debuggable
+        if "$BT/aapt" dump xmltree "$NEW_APK" AndroidManifest.xml | grep -q 'android:debuggable'; then
+          echo "::error::Release APK has android:debuggable set"
+          FAIL="debuggable release"
+        fi
+
+        if [ -n "$FAIL" ]; then echo "::error::Static artifact checks FAILED: $FAIL"; exit 1; fi
+        echo "✅ Static artifact checks passed"
+
+    - name: Install test on Android 16 emulator (real update path)
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 36
+        arch: x86_64
+        target: google_apis
+        force-avd-creation: false
+        emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+        disable-animations: true
+        script: |
+          set -e
+          # adb can exit 0 even when the install fails — assert on the literal Success line
+          must_install() {
+            echo "--- adb install -r $1 ---"
+            OUT=$(adb install -r "$1" 2>&1); RC=$?; echo "$OUT"
+            if [ $RC -ne 0 ] || ! echo "$OUT" | grep -q '^Success$'; then
+              echo "::error::adb install FAILED (rc=$RC) — this release would not install for users: $OUT"
+              exit 1
+            fi
+          }
+          # Reproduce the user path: previous public release installed, then update
+          if [ -n "$PREV_APK" ]; then
+            must_install "$PREV_APK"
+          fi
+          must_install "$NEW_APK"
+
+          echo "--- Verifying installed package state ---"
+          VN=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionName=' | tr -d ' \r' | sed 's/versionName=//')
+          VC=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionCode=' | tr -d ' \r' | sed 's/.*versionCode=\([0-9]*\).*/\1/')
+          FLAGS=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'pkgFlags' | tr -d '\r')
+          echo "installed: versionName=$VN versionCode=$VC $FLAGS"
+
+          [ "$VN" = "$RELEASE_VERSION_NAME" ] || { echo "::error::installed versionName '$VN' != tag '$RELEASE_VERSION_NAME'"; exit 1; }
+          [ "$VC" = "$RELEASE_VERSION_CODE" ] || { echo "::error::installed versionCode '$VC' != expected '$RELEASE_VERSION_CODE'"; exit 1; }
+          echo "$FLAGS" | grep -q 'DEBUGGABLE' && { echo "::error::installed package is DEBUGGABLE — this is a debug build, not a release"; exit 1; } || true
+          echo "✅ Emulator install test passed — APK installs as a real update on Android 16"
+
+          # ---- Regression probe: city picker must be seeded in the RELEASE build ----
+          # v3.14.0 shipped an empty city picker: R8 minification broke Gson reflective
+          # seeding of cities.json, the failure was swallowed by runCatching, and neither
+          # JVM tests nor debug-build e2e could see it. This probe exercises the minified
+          # binary end-to-end. Deterministic uiautomator taps — no vision model in CI.
+          tapd() {
+            adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
+            adb shell cat /sdcard/ci.xml > /tmp/ci.xml
+            B=$(grep -oE "text=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" /tmp/ci.xml | grep -oE '[0-9]+' | tr '\n' ' ')
+            if [ -z "$B" ]; then echo "::error::node '$1' not found on screen"; return 1; fi
+            adb shell input tap $(( ($(echo $B | awk '{print $1}') + $(echo $B | awk '{print $3}')) / 2 )) $(( ($(echo $B | awk '{print $2}') + $(echo $B | awk '{print $4}')) / 2 ))
+            sleep 1
+          }
+          tapd "Pengaturan" || { echo "::error::cannot navigate to Pengaturan"; exit 1; }
+          tapd "Kota / Lokasi Aktif" || { echo "::error::cannot open city picker"; exit 1; }
+          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1; adb shell cat /sdcard/ci.xml > /tmp/ci.xml
+          ROWS=$(grep -c '• Indonesia' /tmp/ci.xml || true)
+          echo "city rows visible in picker: $ROWS"
+          if [ "${ROWS:-0}" -lt 3 ]; then
+            echo "::error::city picker list empty in RELEASE build — minify/reflection regression (check proguard-rules.pro keeps)"
+            exit 1
+          fi
+          echo "✅ City picker seeded — release minification did not break Gson seeding"
+
     # Upload Release APK
     - name: Upload Release APK
       uses: actions/upload-artifact@v4
