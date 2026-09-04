@@ -259,35 +259,20 @@ jobs:
         disable-animations: true
         script: |
           set -e
-          # NOTE: keep every line a complete statement — the runner may feed lines to
-          # /usr/bin/sh individually, so multi-line functions/blocks are not safe here.
-          OUT=$(adb install -r "$NEW_APK" 2>&1); echo "$OUT"; echo "$OUT" | grep -q '^Success$' || { echo "::error::new APK failed to install on a FRESH Android 16 — users would hit this"; exit 1; }
-          VN=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionName=' | tr -d ' \r' | sed 's/versionName=//')
-          VC=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionCode=' | tr -d ' \r' | sed 's/.*versionCode=\([0-9]*\).*/\1/')
-          FLAGS=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'pkgFlags' | tr -d '\r')
-          echo "installed: versionName=$VN versionCode=$VC $FLAGS"
-          [ "$VN" = "$RELEASE_VERSION_NAME" ] || { echo "::error::installed versionName '$VN' != tag '$RELEASE_VERSION_NAME'"; exit 1; }
-          [ "$VC" = "$RELEASE_VERSION_CODE" ] || { echo "::error::installed versionCode '$VC' != expected '$RELEASE_VERSION_CODE'"; exit 1; }
-          case "$FLAGS" in *DEBUGGABLE*) echo "::error::installed package is DEBUGGABLE — debug build shipped as release"; exit 1;; esac
-          echo "install test passed — APK installs on Android 16 with correct version stamps"
-          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
-          adb shell cat /sdcard/ci.xml > /tmp/ci.xml
-          B=$(grep -oE 'text="Pengaturan"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' /tmp/ci.xml | grep -oE '[0-9]+' | tr '\n' ' ')
-          [ -n "$B" ] || { echo "::error::Pengaturan tab not found on home screen"; exit 1; }
-          adb shell input tap $(( ($(echo "$B" | awk '{print $1}') + $(echo "$B" | awk '{print $3}')) / 2 )) $(( ($(echo "$B" | awk '{print $2}') + $(echo "$B" | awk '{print $4}')) / 2 ))
+          # WARNING: the runner feeds this script to /usr/bin/sh LINE BY LINE — every
+          # line MUST be a self-contained statement; shell variables never survive to
+          # the next line, and multi-line functions/blocks fail to parse.
+          OUT=$(adb install -r "$NEW_APK" 2>&1); echo "$OUT"; echo "$OUT" | grep -q '^Success$' || { echo "::error::fresh install failed on API-36 emulator — users would hit this"; exit 1; }
+          V=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionName=' | tr -d ' \r' | sed 's/versionName=//'); echo "installed versionName=$V"; [ "$V" = "$RELEASE_VERSION_NAME" ] || { echo "::error::installed versionName '$V' != tag '$RELEASE_VERSION_NAME'"; exit 1; }
+          V=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionCode=' | tr -d ' \r' | sed 's/.*versionCode=\([0-9]*\).*/\1/'); echo "installed versionCode=$V"; [ "$V" = "$RELEASE_VERSION_CODE" ] || { echo "::error::installed versionCode '$V' != expected '$RELEASE_VERSION_CODE'"; exit 1; }
+          F=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'pkgFlags' | tr -d '\r'); echo "$F"; case "$F" in *DEBUGGABLE*) echo "::error::DEBUGGABLE package shipped as release"; exit 1;; esac; echo "install + version stamps OK"
+          adb shell pm grant com.ebsoft.shollu android.permission.ACCESS_FINE_LOCATION; adb shell pm grant com.ebsoft.shollu android.permission.ACCESS_COARSE_LOCATION; adb shell pm grant com.ebsoft.shollu android.permission.POST_NOTIFICATIONS
+          adb shell monkey -p com.ebsoft.shollu -c android.intent.category.LAUNCHER 1; sleep 5
+          B=""; for i in 1 2 3 4 5; do adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1; B=$(adb shell cat /sdcard/ci.xml | grep -oE 'text="Pengaturan"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '); [ -n "$B" ] && break; sleep 2; done; [ -n "$B" ] && adb shell input tap $(( ($(echo "$B"|awk '{print $1}')+$(echo "$B"|awk '{print $3}'))/2 )) $(( ($(echo "$B"|awk '{print $2}')+$(echo "$B"|awk '{print $4}'))/2 )) || { echo "::error::Pengaturan tab not found/tappable on home"; exit 1; }
           sleep 2
-          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
-          adb shell cat /sdcard/ci.xml > /tmp/ci.xml
-          B=$(grep -oE 'text="Kota / Lokasi Aktif"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' /tmp/ci.xml | grep -oE '[0-9]+' | tr '\n' ' ')
-          [ -n "$B" ] || { echo "::error::city row not found in Pengaturan"; exit 1; }
-          adb shell input tap $(( ($(echo "$B" | awk '{print $1}') + $(echo "$B" | awk '{print $3}')) / 2 )) $(( ($(echo "$B" | awk '{print $2}') + $(echo "$B" | awk '{print $4}')) / 2 ))
+          B=""; for i in 1 2 3 4 5; do adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1; B=$(adb shell cat /sdcard/ci.xml | grep -oE 'text="Kota / Lokasi Aktif"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '); [ -n "$B" ] && break; sleep 2; done; [ -n "$B" ] && adb shell input tap $(( ($(echo "$B"|awk '{print $1}')+$(echo "$B"|awk '{print $3}'))/2 )) $(( ($(echo "$B"|awk '{print $2}')+$(echo "$B"|awk '{print $4}'))/2 )) || { echo "::error::city row not found/tappable in Pengaturan"; exit 1; }
           sleep 2
-          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
-          adb shell cat /sdcard/ci.xml > /tmp/ci.xml
-          ROWS=$(grep -c '• Indonesia' /tmp/ci.xml || true)
-          echo "city rows visible in picker: $ROWS"
-          [ "${ROWS:-0}" -ge 3 ] || { echo "::error::city picker list empty in RELEASE build — minify/reflection regression (check proguard-rules.pro keeps)"; exit 1; }
-          echo "city picker seeded — release minification did not break Gson seeding"
+          for i in 1 2 3 4 5; do adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1; adb shell cat /sdcard/ci.xml > /tmp/ci.xml; grep -q 'Pilih Kota' /tmp/ci.xml && break; sleep 2; done; R=$(grep -o '• Indonesia' /tmp/ci.xml | wc -l); echo "city rows visible in picker: $R"; [ "${R:-0}" -ge 3 ] || { echo "::error::city picker list EMPTY in release build — minify/reflection regression (check proguard-rules.pro keeps)"; exit 1; }; echo "RELEASE GATE PASSED"
 
     # Upload Release APK
     - name: Upload Release APK
