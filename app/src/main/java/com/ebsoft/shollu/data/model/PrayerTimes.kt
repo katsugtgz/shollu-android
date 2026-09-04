@@ -38,8 +38,7 @@ data class PrayerTimes(
     }
 
     fun getFormattedTimeFor(prayerType: PrayerType): String {
-        val formatter = DateTimeFormatter.ofPattern("HH:mm")
-        return getTimeFor(prayerType).format(formatter)
+        return getTimeFor(prayerType).format(HM_FORMATTER)
     }
 
     /**
@@ -92,5 +91,9 @@ data class PrayerTimes(
         val (type, time) = rolloverSchedule.first()
         val tomorrowDate = now.toLocalDate().plusDays(1)
         return Triple(type, time, LocalDateTime.of(tomorrowDate, time))
+    }
+
+    companion object {
+        internal val HM_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     }
 }

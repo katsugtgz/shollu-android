@@ -307,7 +307,8 @@ class LifecycleAdversarialTest {
         assertEquals("extra_prayer_name", VibrationAlarmService.EXTRA_PRAYER_NAME)
         assertEquals("extra_prayer_time", VibrationAlarmService.EXTRA_PRAYER_TIME)
         assertEquals("extra_is_pre_prayer", VibrationAlarmService.EXTRA_IS_PRE_PRAYER)
-        assertEquals(2001, VibrationAlarmService.NOTIFICATION_ID)
-        assertEquals("shollu_prayer_alarm_channel", VibrationAlarmService.CHANNEL_ID)
+        assertEquals("extra_is_nudge", VibrationAlarmService.EXTRA_IS_NUDGE)
+        assertEquals("extra_intensity_max", VibrationAlarmService.EXTRA_INTENSITY_MAX)
+        // Channel id + notification id are pinned once, in AlarmAndSchedulerTest.
     }
 }

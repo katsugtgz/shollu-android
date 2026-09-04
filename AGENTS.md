@@ -22,10 +22,10 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
         │   ├── engine/          # PURE Kotlin math (AstroCalculator/QiblaCalculator/HijriCalendarHelper) — zero Android imports, keep it that way
         │   ├── data/            # Room + DataStore + repository seams → see data/AGENTS.md
         │   ├── receiver/        # alarm pipeline: AlarmScheduler, AlarmTime, receivers → see receiver/AGENTS.md
-        │   ├── service/         # foreground services (FOREGROUND_SERVICE_TYPE_SPECIAL_USE): OngoingNotification, VibrationAlarm (45s auto-stop, 60s wakelock cap), FloatingDropzone
+        │   ├── service/         # foreground services (FOREGROUND_SERVICE_TYPE_SPECIAL_USE): OngoingNotification, VibrationAlarm (45s auto-stop cap for prayer entry, ~2.75s for nudges; 60s wakelock cap, silent _v2 channel — app waveform is the only haptic), FloatingDropzone (loop frozen while screen off)
         │   ├── widget/          # SholluAppWidget.kt (Glance): self-contained, builds own prefs+repo; updateSholluWidgets() called from app/receiver
         │   └── ui/              # Compose-only UI → see ui/AGENTS.md
-        ├── main/res/raw/cities.json  # 64-city seed, loaded by CityRepository (Gson)
+        ├── main/res/raw/cities.json  # 63-city seed, loaded by CityRepository (Gson)
         └── test/java/com/ebsoft/shollu/  # JVM-only suites → see AGENTS.md there
 ```
 
@@ -90,7 +90,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 
 ## UNIQUE STYLES
 
-- Settings mutations always pair: DataStore write + `scheduleNextPrayerAlarms` + widget refresh, on `applicationScope` (survives navigation; not `rememberCoroutineScope`).
+- Settings mutations run on `applicationScope` (survives navigation; not `rememberCoroutineScope`); per-control side effects follow the explicit matrix in `ui/screens/settings/SettingsActions.kt` (write / reschedule / widget-refresh vary per control — hisab, ihtiyat, and ThemeMode refresh the widget; Hijri adjustment and max vibration are write-only).
 - Tests: strict `test<CamelCase>` prefix; regression tests named after the bug; hardening rounds as `*Round2Test`; adversarial suites (`AdversarialStressTest`, `AlarmPipelineHardeningTest`).
 - `rememberTickMillis(interval)` used as a remember-key so wall-clock reads don't freeze at first composition. Two tick idioms coexist: `rememberTickMillis` (30-60s remember-key invalidation) vs 1s `LaunchedEffect` loop (hero countdown).
 - Request-code invariants are proven by tests (even=main, odd=pre-prayer, disjoint 100-yr space) — don't change the formula casually.
@@ -109,7 +109,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 ## NOTES
 
 - CI `.github/workflows/android-build.yml`: SDK-37 install → gate → test → assembleDebug → (tag only) release + gh release. Tag `v*.*.*` (with `-suffix` → prerelease); versionCode = `MAJOR*10000+MINOR*100+PATCH` from the git tag, fails if MINOR/PATCH > 99. Local overrides: `-PRELEASE_VERSION_NAME=… -PRELEASE_VERSION_CODE=…`.
-- Release pipeline has an artifact-verification gate BEFORE the GitHub Release is created: signing-cert continuity vs previous release (INSTALL_FAILED_UPDATE_INCOMPATIBLE guard), versionCode monotonicity (VERSION_DOWNGRADE guard), tag↔APK version stamp match, `zipalign -P 16` check, debuggable-manifest check, and a real `adb install -r` update-path test on an API-36 emulator (`reactivecircus/android-emulator-runner`). If a release ever "can't be installed", this gate is where it should have died.
+- Release pipeline has an artifact-verification gate BEFORE the GitHub Release is created: signing-cert continuity vs previous release (INSTALL_FAILED_UPDATE_INCOMPATIBLE guard), versionCode monotonicity (VERSION_DOWNGRADE guard), tag↔APK version stamp match, `zipalign -P 16` check, debuggable-manifest check, and a real `adb install -r` update-path test on an API-36 emulator (`reactivecircus/android-emulator-runner`) that also opens the city picker and requires a seeded list (minify/reflection regression guard). If a release ever "can't be installed", this gate is where it should have died.
 - `androidx.fragment` constrained to 1.9.0 in `app/build.gradle.kts` — unblocks `lintVitalRelease` (#11). Do not remove.
 - Release signing: local `app/release.keystore` + `app/signing.properties` (gitignored); same key is in GitHub Secrets (`KEYSTORE_BASE64` + 3) so CI tag releases sign identically.
 - `androidTestImplementation` deps + `testInstrumentationRunner` are declared but no androidTest source set exists (dead config). UI layer has zero test coverage (by design of JVM-only suite).

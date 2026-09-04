@@ -15,7 +15,9 @@ import com.ebsoft.shollu.data.repository.IReminderRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.data.repository.ReminderRepository
 import com.ebsoft.shollu.receiver.AlarmScheduler
+import com.ebsoft.shollu.receiver.ReminderAlarmReceiver
 import com.ebsoft.shollu.receiver.ReminderAlarmScheduler
+import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.service.OngoingNotificationService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,14 +80,28 @@ class SholluApplication : Application() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+            // Upgrade from the legacy (vibrating, dinging) ids: a user who lowered or
+            // blocked a legacy channel keeps that choice — importance is immutable
+            // app-side after creation, so it must be copied BEFORE the v2 channel is
+            // created. The legacy entries are deleted below so Settings shows no dead
+            // duplicates.
+            val legacyAlarm = manager.getNotificationChannel("shollu_prayer_alarm_channel")
+            val legacyScheduler = manager.getNotificationChannel("shollu_scheduler_channel")
+
+            // Silent alarm channel: VibrationAlarmService's explicit Vibrator waveform is
+            // the single haptic source. The old id's enableVibration raced the waveform on
+            // the same vibrator and layered a stock ding on the notification stream — the
+            // "double buzz / random feel" bug. New id because channels are immutable.
             val prayerAlarmChannel = NotificationChannel(
-                "shollu_prayer_alarm_channel",
+                VibrationAlarmService.CHANNEL_ID,
                 getString(R.string.channel_prayer_alarm),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = getString(R.string.channel_prayer_alarm_desc)
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 800, 300, 800, 300, 1200, 500)
+                setSound(null, null)
+                enableVibration(false)
+                legacyAlarm?.importance?.takeIf { it < NotificationManager.IMPORTANCE_HIGH }
+                    ?.let { importance = it }
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
 
@@ -99,17 +115,39 @@ class SholluApplication : Application() {
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
 
+            // Reminder channel keeps its heads-up + default sound, but no channel-level
+            // vibration: when a reminder opts into "getar maksimal", ReminderAlarmReceiver
+            // posts it silent and lets VibrationAlarmService's nudge burst be the only
+            // haptic — not both at once.
             val schedulerChannel = NotificationChannel(
-                "shollu_scheduler_channel",
+                ReminderAlarmReceiver.CHANNEL_ID,
                 getString(R.string.channel_scheduler),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = getString(R.string.channel_scheduler_desc)
-                enableVibration(true)
+                enableVibration(false)
+                legacyScheduler?.importance?.takeIf { it < NotificationManager.IMPORTANCE_HIGH }
+                    ?.let { importance = it }
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
 
             manager.createNotificationChannels(listOf(prayerAlarmChannel, ongoingChannel, schedulerChannel))
+
+            legacyAlarm?.let { manager.deleteNotificationChannel(it.id) }
+            legacyScheduler?.let { manager.deleteNotificationChannel(it.id) }
         }
+    }
+
+    companion object {
+        // Shared-singleton accessors with a cold-build fallback for hosts whose
+        // application is not Shollu's (instrumented/test hosts). One home for the cast
+        // so widget/service call sites don't each repeat the fallback decision.
+        fun preferencesOf(context: Context): SholluPreferences =
+            (context.applicationContext as? SholluApplication)?.preferences
+                ?: SholluPreferences(context.applicationContext)
+
+        fun prayerRepositoryOf(context: Context): IPrayerRepository =
+            (context.applicationContext as? SholluApplication)?.prayerRepository
+                ?: PrayerRepository(preferencesOf(context))
     }
 }

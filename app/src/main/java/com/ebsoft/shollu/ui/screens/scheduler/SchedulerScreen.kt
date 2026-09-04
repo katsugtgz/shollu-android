@@ -11,10 +11,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ebsoft.shollu.data.db.entity.DaysOfWeek
 import com.ebsoft.shollu.data.db.entity.ReminderEntity
@@ -22,8 +20,6 @@ import com.ebsoft.shollu.data.db.entity.ReminderType
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.repository.IReminderRepository
 import com.ebsoft.shollu.receiver.AlarmTime
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import kotlinx.coroutines.launch
 
 @Composable
@@ -43,13 +39,14 @@ fun SchedulerScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = EmeraldPrimary,
-                contentColor = Color.White,
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Tambah Pengingat")
             }
         },
+        // Nested inside MainActivity's Scaffold, which already applies the system-bar
+        // insets to its content — zero these out or the status/nav insets stack twice.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
         LazyColumn(
@@ -66,12 +63,12 @@ fun SchedulerScreen(
                         text = "Pengingat Islami (Scheduler)",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = EmeraldPrimary
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Fitur khas Shollu untuk mengingatkan amalan sunnah dan agenda harian.",
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -132,7 +129,7 @@ fun SchedulerScreen(
                         reminderType = ReminderType.CUSTOM,
                         daysOfWeek = DaysOfWeek.fromString(days),
                         isEnabled = true,
-                        isMaxVibration = true
+                        isMaxVibration = false
                     )
                     val id = reminderRepository.insertReminder(newReminder)
                     val saved = if (id > 0) newReminder.copy(id = id) else newReminder
@@ -184,14 +181,16 @@ private fun ReminderItemCard(
                     modifier = Modifier
                         .size(44.dp)
                         .background(
-                            if (reminder.isEnabled) EmeraldPrimary else Color.Gray.copy(alpha = 0.4f),
-                            RoundedCornerShape(12.dp)
+                            if (reminder.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            RoundedCornerShape(16.dp)
                         )
                 ) {
                     Icon(
                         imageVector = if (isPreset) Icons.Default.Bookmark else Icons.Default.Alarm,
                         contentDescription = null,
-                        tint = if (reminder.isEnabled) EmeraldGold else Color.White,
+                        // Disabled glyph needs an ON-role: surface is a background role and
+                        // disappears against the dark chip in dark/AMOLED themes.
+                        tint = if (reminder.isEnabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -201,14 +200,14 @@ private fun ReminderItemCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = reminder.title,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
                         color = if (reminder.isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                     if (reminder.description.isNotEmpty()) {
                         Text(
                             text = reminder.description,
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2
                         )
@@ -216,9 +215,9 @@ private fun ReminderItemCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Pukul $formattedTime $timezoneLabel",
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (reminder.isEnabled) EmeraldPrimary else Color.Gray
+                        color = if (reminder.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -226,11 +225,7 @@ private fun ReminderItemCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(
                     checked = reminder.isEnabled,
-                    onCheckedChange = onToggle,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = EmeraldGold,
-                        checkedTrackColor = EmeraldPrimary
-                    )
+                    onCheckedChange = onToggle
                 )
 
                 if (!isPreset) {
@@ -277,7 +272,7 @@ private fun AddReminderDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("Pilih Jam & Menit:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text("Pilih Jam & Menit:", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -288,7 +283,7 @@ private fun AddReminderDialog(
                         label = { Text("Jam (0-23)") },
                         modifier = Modifier.weight(1f)
                     )
-                    Text(":", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text(":", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = minuteField.text,
                         onValueChange = { minuteField.onValueChange(it) },
@@ -304,8 +299,7 @@ private fun AddReminderDialog(
                     if (title.isNotBlank()) {
                         onSave(title, desc, hourField.value, minuteField.value, "*")
                     }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                }
             ) {
                 Text("Simpan")
             }

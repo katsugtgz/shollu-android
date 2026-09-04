@@ -21,12 +21,6 @@ class CityRepository(
         list.map { it.toModel() }
     }
 
-    fun searchCities(query: String): Flow<List<City>> {
-        return cityDao.searchCities(query).map { list ->
-            list.map { it.toModel() }
-        }
-    }
-
     suspend fun getCityById(id: Long): City? {
         return cityDao.getCityById(id)?.toModel()
     }

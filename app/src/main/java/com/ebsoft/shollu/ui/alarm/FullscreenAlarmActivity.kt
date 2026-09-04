@@ -8,11 +8,11 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -23,20 +23,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ebsoft.shollu.data.model.ThemeMode
+import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.service.VibrationAlarmService
-import com.ebsoft.shollu.ui.theme.EmeraldGold
-import com.ebsoft.shollu.ui.theme.EmeraldPrimary
 import com.ebsoft.shollu.ui.theme.SholluTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 class FullscreenAlarmActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        // The alarm backdrop is an always-dark gradient (Color.Black → primary) regardless of
+        // ThemeMode, so the system-bar icons must be LIGHT even when the resolved scheme is
+        // light. SholluTheme's systemBarsBackgroundDark param pins that without fighting the
+        // theme's own icon-appearance SideEffect.
         turnScreenOnAndShowWhenLocked()
 
         val prayerName = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_NAME) ?: "Sholat"
@@ -44,11 +52,28 @@ class FullscreenAlarmActivity : ComponentActivity() {
         // Zone label of the city that ARMED this alarm (WIB/WITA/WIT/UTC±), fixed at arm time
         // alongside prayerTime. Read synchronously from the intent — the CURRENT preference is
         // wrong here: it can have changed after arming (and an async first read would briefly
-        // drop the label anyway).
+        // drop the label anyway). AlarmScheduler stamps it via AlarmTime.timezoneLabel(city
+        // .timezone), so the line is always the CITY offset, never a hardcoded WIB.
         val timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
+        // Saved ThemeMode (issue #20): the alarm must match the app's theme the user picked,
+        // not a hardcoded default. Read synchronously — a collect-with-default would flash the
+        // Emerald scheme over the lockscreen before the saved mode lands. The block is bounded
+        // in practice: this process can only be serving an alarm after Application.onCreate,
+        // whose boot chain (arm alarms → ongoing notification) has already read the same
+        // application-scoped singleton, so .first() hits the warm in-memory DataStore cache.
+        val themeMode: ThemeMode = runBlocking {
+            (application as SholluApplication).preferences.themeMode.first()
+        }
 
         setContent {
-            SholluTheme {
+            // Documented nested-theme exception (issues #15/#20): the ONE sanctioned nested
+            // MaterialExpressiveTheme — same colors/shapes/type as the app root for the saved
+            // ThemeMode, but standard() motion — an alarm must render instantly, springs off.
+            SholluTheme(
+                themeMode = themeMode,
+                motionScheme = MotionScheme.standard(),
+                systemBarsBackgroundDark = true
+            ) {
                 FullscreenAlarmScreen(
                     prayerName = prayerName,
                     prayerTime = prayerTime,
@@ -102,6 +127,14 @@ fun FullscreenAlarmScreen(
     onStopVibration: () -> Unit,
     onSnooze: () -> Unit
 ) {
+    // Screen follows the saved ThemeMode through the nested SholluTheme — accents come from
+    // colorScheme roles (tertiary = the mode's gold, primary = the mode's brand color), never
+    // hardcoded emerald/gold hexes. The backdrop stays an always-dark immersive gradient by
+    // construction: black deepened with 30% of the mode's primary (issue #20).
+    val accent = MaterialTheme.colorScheme.tertiary
+    val brand = MaterialTheme.colorScheme.primary
+
+    // Behavior locks: pulse stays a simple 800ms tween — NO expressive springs on an alarm.
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -112,18 +145,23 @@ fun FullscreenAlarmScreen(
         ),
         label = "pulseScale"
     )
+    // The backdrop depends only on `brand`, never on the pulse — remembering it keeps the
+    // per-frame recomposition (the .scale read below) from reallocating a Color + Brush
+    // at ~60fps for the whole alarm duration.
+    val backdrop = remember(brand) {
+        Brush.verticalGradient(
+            colors = listOf(
+                lerp(Color.Black, brand, 0.30f),
+                Color.Black
+            )
+        )
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF062B21),
-                        Color(0xFF02120E)
-                    )
-                )
-            )
+            .background(backdrop)
+            .systemBarsPadding()
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -134,8 +172,8 @@ fun FullscreenAlarmScreen(
         ) {
             Text(
                 text = "SHOLLU",
-                color = EmeraldGold,
-                fontSize = 18.sp,
+                color = accent,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 4.sp
             )
@@ -148,19 +186,19 @@ fun FullscreenAlarmScreen(
                 modifier = Modifier
                     .size(130.dp)
                     .scale(pulseScale)
-                    .background(Color(0x33D4AF37), CircleShape)
+                    .background(accent.copy(alpha = 0.2f), CircleShape)
                     .padding(16.dp)
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .size(90.dp)
-                        .background(EmeraldPrimary, CircleShape)
+                        .background(brand, CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.NotificationsActive,
                         contentDescription = "Alarm Active",
-                        tint = EmeraldGold,
+                        tint = accent,
                         modifier = Modifier.size(48.dp)
                     )
                 }
@@ -171,7 +209,7 @@ fun FullscreenAlarmScreen(
             Text(
                 text = "Waktu $prayerName Telah Masuk",
                 color = Color.White,
-                fontSize = 24.sp,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
@@ -180,8 +218,8 @@ fun FullscreenAlarmScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = if (timezoneLabel != null) "$prayerTime $timezoneLabel" else prayerTime,
-                    color = EmeraldGold,
-                    fontSize = 32.sp,
+                    color = accent,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.ExtraBold
                 )
             }
@@ -189,8 +227,8 @@ fun FullscreenAlarmScreen(
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Getar intensitas maksimal aktif. Mari bersiap menunaikan ibadah sholat.",
-                color = Color(0xFFB0BEC5),
-                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
@@ -200,23 +238,26 @@ fun FullscreenAlarmScreen(
             // Action Buttons
             Button(
                 onClick = onStopVibration,
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldGold),
-                shape = RoundedCornerShape(16.dp),
+                // onTertiary pairing: hardcoded black content loses contrast on light
+                // tertiary containers (e.g. Dynamic light palettes).
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = accent,
+                    contentColor = MaterialTheme.colorScheme.onTertiary
+                ),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.VolumeOff,
-                    contentDescription = null,
-                    tint = Color.Black
+                    contentDescription = null
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Hentikan Getar & Tutup",
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -224,13 +265,13 @@ fun FullscreenAlarmScreen(
 
             OutlinedButton(
                 onClick = onSnooze,
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text("Tunda (5 Menit)", fontSize = 15.sp)
+                Text("Tunda (5 Menit)", style = MaterialTheme.typography.labelLarge)
             }
         }
     }

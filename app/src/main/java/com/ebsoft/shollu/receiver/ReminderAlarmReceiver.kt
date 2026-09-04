@@ -25,7 +25,10 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_REMINDER_TITLE = "extra_reminder_title"
         const val EXTRA_REMINDER_DESC = "extra_reminder_desc"
         const val EXTRA_IS_MAX_VIBRATION = "extra_is_max_vibration"
-        const val CHANNEL_ID = "shollu_scheduler_channel"
+
+        // v2: no channel-level vibration (the old id's channel buzz raced the
+        // VibrationAlarmService nudge burst; channels are immutable, hence the rename).
+        const val CHANNEL_ID = "shollu_scheduler_channel_v2"
         const val ACTION_REMINDER_ALARM = "com.ebsoft.shollu.ACTION_REMINDER_ALARM"
     }
 
@@ -33,7 +36,8 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         val reminderId = intent.getLongExtra(EXTRA_REMINDER_ID, 0)
         val title = intent.getStringExtra(EXTRA_REMINDER_TITLE) ?: "Agenda Shollu"
         val desc = intent.getStringExtra(EXTRA_REMINDER_DESC) ?: "Waktunya menjalankan agenda ibadah sunnah."
-        val isMaxVibration = intent.getBooleanExtra(EXTRA_IS_MAX_VIBRATION, true)
+        // Fail-quiet: a malformed intent must not trigger the 45s vibration service.
+        val isMaxVibration = intent.getBooleanExtra(EXTRA_IS_MAX_VIBRATION, false)
 
         createNotificationChannel(context)
 
@@ -57,24 +61,31 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(mainPendingIntent)
             .setAutoCancel(true)
+            // The v2 channel is vibration-less and the nudge service always runs (below),
+            // so the notification itself must be silent — one haptic source, never two.
+            .setSilent(true)
             .build()
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify((3000 + reminderId).toInt(), notification)
 
-        // Trigger vibration if requested
-        if (isMaxVibration) {
-            val serviceIntent = Intent(context, VibrationAlarmService::class.java).apply {
-                action = VibrationAlarmService.ACTION_START_VIBRATION
-                putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, title)
-                putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "")
-                putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
+        // Haptic: ALWAYS the nudge service — with the v2 channel vibration-less, this is
+        // the only haptic a reminder gets, so it must not be gated behind the intensity
+        // preference. isMaxVibration selects the intensity (max pattern vs gentle).
+        val serviceIntent = Intent(context, VibrationAlarmService::class.java).apply {
+            action = VibrationAlarmService.ACTION_START_VIBRATION
+            putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, title)
+            putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "")
+            putExtra(VibrationAlarmService.EXTRA_IS_PRE_PRAYER, false)
+            // Reminders are nudges: one short burst, not the 45s adzan-length loop.
+            putExtra(VibrationAlarmService.EXTRA_IS_NUDGE, true)
+            // Per-reminder intensity, not the global preference.
+            putExtra(VibrationAlarmService.EXTRA_INTENSITY_MAX, isMaxVibration)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
         }
 
         // Reschedule next recurrence in background with goAsync() lifecycle protection
@@ -112,7 +123,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Pengingat surat Al-Kahfi, puasa sunnah, dan agenda kustom"
-                enableVibration(true)
+                enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

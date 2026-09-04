@@ -6,11 +6,11 @@ import com.ebsoft.shollu.engine.AstroCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 import java.time.YearMonth
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Hardened implementation of IPrayerRepository with in-memory caching
@@ -33,7 +33,22 @@ class PrayerRepository(
         val offsets: Map<String, Int>
     )
 
-    private val calculationCache = ConcurrentHashMap<PrayerCalculationKey, PrayerTimes>()
+    private val cacheLock = Any()
+    /** Access-order LRU; mutate only under [cacheLock] (`LinkedHashMap` is not concurrent). */
+    private val calculationCache = object : LinkedHashMap<PrayerCalculationKey, PrayerTimes>(
+        16,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<PrayerCalculationKey, PrayerTimes>
+        ): Boolean = size > MAX_CALCULATION_CACHE
+    }
+
+    companion object {
+        /** ~13 months of unique days; calendar browsing + city hops must not grow forever. */
+        internal const val MAX_CALCULATION_CACHE = 400
+    }
 
     /**
      * Flow pulse emitting the current date: ticks just past each natural
@@ -41,7 +56,7 @@ class PrayerRepository(
      * time / timezone change), instead of parking in one monotonic delay().
      */
     private fun midnightPulseFlow(): Flow<LocalDate> =
-        datePulseFlow(clock, pollIntervalMillis = 30_000L)
+        datePulseFlow(clock, pollIntervalMillis = 30_000L).distinctUntilChanged()
 
     override val todayPrayerTimes: Flow<PrayerTimes> = combine(
         midnightPulseFlow(),
@@ -128,8 +143,9 @@ class PrayerRepository(
             ihtiyat = ihtiyat,
             offsets = offsets
         )
-        return calculationCache.computeIfAbsent(key) {
-            AstroCalculator.calculate(
+        synchronized(cacheLock) {
+            calculationCache[key]?.let { return it }
+            val computed = AstroCalculator.calculate(
                 date = date,
                 latitude = city.latitude,
                 longitude = city.longitude,
@@ -140,6 +156,8 @@ class PrayerRepository(
                 ihtiyatMinutes = ihtiyat,
                 customOffsets = offsets
             )
+            calculationCache[key] = computed
+            return computed
         }
     }
 
@@ -163,6 +181,8 @@ class PrayerRepository(
     }
 
     override fun clearCache() {
-        calculationCache.clear()
+        synchronized(cacheLock) {
+            calculationCache.clear()
+        }
     }
 }
