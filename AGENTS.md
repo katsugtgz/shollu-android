@@ -109,6 +109,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 ## NOTES
 
 - CI `.github/workflows/android-build.yml`: SDK-37 install → gate → test → assembleDebug → (tag only) release + gh release. Tag `v*.*.*` (with `-suffix` → prerelease); versionCode = `MAJOR*10000+MINOR*100+PATCH` from the git tag, fails if MINOR/PATCH > 99. Local overrides: `-PRELEASE_VERSION_NAME=… -PRELEASE_VERSION_CODE=…`.
+- Release pipeline has an artifact-verification gate BEFORE the GitHub Release is created: signing-cert continuity vs previous release (INSTALL_FAILED_UPDATE_INCOMPATIBLE guard), versionCode monotonicity (VERSION_DOWNGRADE guard), tag↔APK version stamp match, `zipalign -P 16` check, debuggable-manifest check, and a real `adb install -r` update-path test on an API-36 emulator (`reactivecircus/android-emulator-runner`). If a release ever "can't be installed", this gate is where it should have died.
 - `androidx.fragment` constrained to 1.9.0 in `app/build.gradle.kts` — unblocks `lintVitalRelease` (#11). Do not remove.
 - Release signing: local `app/release.keystore` + `app/signing.properties` (gitignored); same key is in GitHub Secrets (`KEYSTORE_BASE64` + 3) so CI tag releases sign identically.
 - `androidTestImplementation` deps + `testInstrumentationRunner` are declared but no androidTest source set exists (dead config). UI layer has zero test coverage (by design of JVM-only suite).
