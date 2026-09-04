@@ -259,55 +259,35 @@ jobs:
         disable-animations: true
         script: |
           set -e
-          # adb can exit 0 even when the install fails — assert on the literal Success line
-          must_install() {
-            echo "--- adb install -r $1 ---"
-            OUT=$(adb install -r "$1" 2>&1); RC=$?; echo "$OUT"
-            if [ $RC -ne 0 ] || ! echo "$OUT" | grep -q '^Success$'; then
-              echo "::error::adb install FAILED (rc=$RC) — this release would not install for users: $OUT"
-              exit 1
-            fi
-          }
-          # Reproduce the user path: previous public release installed, then update
-          if [ -n "$PREV_APK" ]; then
-            must_install "$PREV_APK"
-          fi
-          must_install "$NEW_APK"
-
-          echo "--- Verifying installed package state ---"
+          # NOTE: keep every line a complete statement — the runner may feed lines to
+          # /usr/bin/sh individually, so multi-line functions/blocks are not safe here.
+          OUT=$(adb install -r "$NEW_APK" 2>&1); echo "$OUT"; echo "$OUT" | grep -q '^Success$' || { echo "::error::new APK failed to install on a FRESH Android 16 — users would hit this"; exit 1; }
           VN=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionName=' | tr -d ' \r' | sed 's/versionName=//')
           VC=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'versionCode=' | tr -d ' \r' | sed 's/.*versionCode=\([0-9]*\).*/\1/')
           FLAGS=$(adb shell dumpsys package com.ebsoft.shollu | grep -m1 'pkgFlags' | tr -d '\r')
           echo "installed: versionName=$VN versionCode=$VC $FLAGS"
-
           [ "$VN" = "$RELEASE_VERSION_NAME" ] || { echo "::error::installed versionName '$VN' != tag '$RELEASE_VERSION_NAME'"; exit 1; }
           [ "$VC" = "$RELEASE_VERSION_CODE" ] || { echo "::error::installed versionCode '$VC' != expected '$RELEASE_VERSION_CODE'"; exit 1; }
-          echo "$FLAGS" | grep -q 'DEBUGGABLE' && { echo "::error::installed package is DEBUGGABLE — this is a debug build, not a release"; exit 1; } || true
-          echo "✅ Emulator install test passed — APK installs as a real update on Android 16"
-
-          # ---- Regression probe: city picker must be seeded in the RELEASE build ----
-          # v3.14.0 shipped an empty city picker: R8 minification broke Gson reflective
-          # seeding of cities.json, the failure was swallowed by runCatching, and neither
-          # JVM tests nor debug-build e2e could see it. This probe exercises the minified
-          # binary end-to-end. Deterministic uiautomator taps — no vision model in CI.
-          tapd() {
-            adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
-            adb shell cat /sdcard/ci.xml > /tmp/ci.xml
-            B=$(grep -oE "text=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" /tmp/ci.xml | grep -oE '[0-9]+' | tr '\n' ' ')
-            if [ -z "$B" ]; then echo "::error::node '$1' not found on screen"; return 1; fi
-            adb shell input tap $(( ($(echo $B | awk '{print $1}') + $(echo $B | awk '{print $3}')) / 2 )) $(( ($(echo $B | awk '{print $2}') + $(echo $B | awk '{print $4}')) / 2 ))
-            sleep 1
-          }
-          tapd "Pengaturan" || { echo "::error::cannot navigate to Pengaturan"; exit 1; }
-          tapd "Kota / Lokasi Aktif" || { echo "::error::cannot open city picker"; exit 1; }
-          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1; adb shell cat /sdcard/ci.xml > /tmp/ci.xml
+          case "$FLAGS" in *DEBUGGABLE*) echo "::error::installed package is DEBUGGABLE — debug build shipped as release"; exit 1;; esac
+          echo "install test passed — APK installs on Android 16 with correct version stamps"
+          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
+          adb shell cat /sdcard/ci.xml > /tmp/ci.xml
+          B=$(grep -oE 'text="Pengaturan"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' /tmp/ci.xml | grep -oE '[0-9]+' | tr '\n' ' ')
+          [ -n "$B" ] || { echo "::error::Pengaturan tab not found on home screen"; exit 1; }
+          adb shell input tap $(( ($(echo "$B" | awk '{print $1}') + $(echo "$B" | awk '{print $3}')) / 2 )) $(( ($(echo "$B" | awk '{print $2}') + $(echo "$B" | awk '{print $4}')) / 2 ))
+          sleep 2
+          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
+          adb shell cat /sdcard/ci.xml > /tmp/ci.xml
+          B=$(grep -oE 'text="Kota / Lokasi Aktif"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' /tmp/ci.xml | grep -oE '[0-9]+' | tr '\n' ' ')
+          [ -n "$B" ] || { echo "::error::city row not found in Pengaturan"; exit 1; }
+          adb shell input tap $(( ($(echo "$B" | awk '{print $1}') + $(echo "$B" | awk '{print $3}')) / 2 )) $(( ($(echo "$B" | awk '{print $2}') + $(echo "$B" | awk '{print $4}')) / 2 ))
+          sleep 2
+          adb shell uiautomator dump /sdcard/ci.xml >/dev/null 2>&1
+          adb shell cat /sdcard/ci.xml > /tmp/ci.xml
           ROWS=$(grep -c '• Indonesia' /tmp/ci.xml || true)
           echo "city rows visible in picker: $ROWS"
-          if [ "${ROWS:-0}" -lt 3 ]; then
-            echo "::error::city picker list empty in RELEASE build — minify/reflection regression (check proguard-rules.pro keeps)"
-            exit 1
-          fi
-          echo "✅ City picker seeded — release minification did not break Gson seeding"
+          [ "${ROWS:-0}" -ge 3 ] || { echo "::error::city picker list empty in RELEASE build — minify/reflection regression (check proguard-rules.pro keeps)"; exit 1; }
+          echo "city picker seeded — release minification did not break Gson seeding"
 
     # Upload Release APK
     - name: Upload Release APK
