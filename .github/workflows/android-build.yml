@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Install Android SDK platform 37 + build-tools 36
       run: |
@@ -28,7 +28,7 @@ jobs:
         "$SDKM" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -63,7 +63,7 @@ jobs:
       
     # Upload Debug Artifacts
     - name: Upload Debug APK
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: debug-apk
         path: app/build/outputs/apk/debug/*.apk
@@ -81,7 +81,7 @@ jobs:
       version: ${{ steps.extract_version.outputs.version }}
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Install Android SDK platform 37 + build-tools 36
       run: |
@@ -115,7 +115,7 @@ jobs:
         echo "RELEASE_VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
     
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -262,6 +262,7 @@ jobs:
         target: default          # AOSP image — no GMS cold-boot overhead; probe needs none
         force-avd-creation: false
         emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -memory 2048
+        emulator-boot-timeout: 600  # generous cold-boot budget; default budget was too tight for API-36 cold boot
         disable-animations: true
         script: |
           set -e
@@ -282,7 +283,7 @@ jobs:
 
     # Upload Release APK
     - name: Upload Release APK
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: release-apk
         path: app/build/outputs/apk/release/app-release*.apk
@@ -290,7 +291,7 @@ jobs:
     
     # Upload AAB
     - name: Upload Release AAB
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: release-aab
         path: app/build/outputs/bundle/release/*.aab
@@ -298,7 +299,7 @@ jobs:
     
     # Create GitHub Release
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       if: success()
       with:
         tag_name: ${{ github.ref_name }}  # Use ref_name, not ref (v... instead of refs/tags/v...)

@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Keep GitHub Actions on current majors — v4 checkout / v1 gh-release class of lag
+  # (deprecated runtimes) surfaces as warnings or silent breakage otherwise.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
