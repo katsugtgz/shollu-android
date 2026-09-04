@@ -248,6 +248,12 @@ jobs:
         if [ -n "$FAIL" ]; then echo "::error::Static artifact checks FAILED: $FAIL"; exit 1; fi
         echo "✅ Static artifact checks passed"
 
+    # Free the runner's RAM before booting the emulator — the Gradle daemon from
+    # assembleRelease (~1-2 GB) starved adbd on the 7 GB runner and the probe's
+    # adb shells died with "Transport endpoint is not connected".
+    - name: Stop Gradle daemons
+      run: ./gradlew --stop
+
     - name: Install test on Android 16 emulator (real update path)
       uses: reactivecircus/android-emulator-runner@v2
       with:
@@ -255,7 +261,7 @@ jobs:
         arch: x86_64
         target: default          # AOSP image — no GMS cold-boot overhead; probe needs none
         force-avd-creation: false
-        emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -memory 3072
+        emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -memory 2048
         disable-animations: true
         script: |
           set -e
