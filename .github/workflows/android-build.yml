@@ -253,9 +253,9 @@ jobs:
       with:
         api-level: 36
         arch: x86_64
-        target: google_apis
+        target: default          # AOSP image — no GMS cold-boot overhead; probe needs none
         force-avd-creation: false
-        emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+        emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -memory 3072
         disable-animations: true
         script: |
           set -e
