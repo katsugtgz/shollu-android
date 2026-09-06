@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night variants for the big-countdown notification content, selected by
+         the SYSTEM night mode (the shade chrome follows the system, not ThemeMode). -->
+    <color name="notification_countdown_primary">#E6E1E5</color>
+    <color name="notification_countdown_secondary">#CAC4D0</color>
+</resources>

@@ -95,6 +95,11 @@
                 android:resource="@xml/shollu_app_widget_info" />
         </receiver>
 
+        <!-- Dismiss path for the ongoing countdown: swipe (deleteIntent) + Matikan action -->
+        <receiver
+            android:name=".service.OngoingNotificationDismissReceiver"
+            android:exported="false" />
+
         <!-- Services -->
         <service
             android:name=".service.OngoingNotificationService"

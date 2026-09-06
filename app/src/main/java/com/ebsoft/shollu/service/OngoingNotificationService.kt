@@ -27,6 +27,12 @@ class OngoingNotificationService : Service() {
         const val ACTION_UPDATE_ONGOING = "com.ebsoft.shollu.ACTION_UPDATE_ONGOING"
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "shollu_ongoing_countdown_channel"
+
+        /**
+         * Big-countdown RemoteViews gate. false = stock template (system chronometer,
+         * standard size) — the one-const revert path for OEM render issues.
+         */
+        private const val USE_REMOTE_COUNTDOWN = true
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
@@ -160,22 +166,70 @@ class OngoingNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        // Swipe and "Matikan" share one dismiss semantic: persist pref=false (else
+        // SholluApplication / BootCompletedReceiver resurrect the countdown) via the
+        // dismiss receiver, which then stops this service.
+        val dismissIntent = Intent(this, OngoingNotificationDismissReceiver::class.java).apply {
+            action = OngoingNotificationDismissReceiver.ACTION_DISMISS_ONGOING
+        }
+        val dismissPendingIntent = PendingIntent.getBroadcast(
+            this,
+            1,
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_prayer)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setSubText(subText)
-            .setWhen(targetEpochMillis)
-            .setUsesChronometer(true)
-            .setChronometerCountDown(true)
-            .setShowWhen(true)
-            .setOngoing(true) // NON-DISMISSIBLE BY USER SWIPE
+            .setOngoing(false) // swipeable — dismissal is persisted by the dismiss receiver
+            .setDeleteIntent(dismissPendingIntent)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW) // Quiet ongoing status, stays docked
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(openAppPendingIntent)
-            .build()
+            .addAction(
+                R.drawable.ic_notification_prayer,
+                "Matikan",
+                dismissPendingIntent
+            )
+
+        val notification = if (USE_REMOTE_COUNTDOWN) {
+            // Big self-ticking countdown: the system Chronometer counts down to the
+            // target epoch on its own — the service keeps its prayer-boundary update
+            // cadence, no per-second work added. Sanitized to the system template
+            // chrome on Android 12+; only the content views are ours.
+            val views = android.widget.RemoteViews(packageName, R.layout.notification_ongoing_countdown)
+            views.setTextViewText(R.id.prayer_label, title)
+            // Chronometer.base lives in the SystemClock.elapsedRealtime() frame, NOT in
+            // epoch millis — a raw epoch base renders the age of the epoch (days in the
+            // hundreds of thousands). Translate the target into the uptime frame.
+            val chronometerBase = android.os.SystemClock.elapsedRealtime() +
+                (targetEpochMillis - System.currentTimeMillis())
+            views.setChronometer(R.id.countdown, chronometerBase, null, false)
+            views.setChronometerCountDown(R.id.countdown, true)
+            // setChronometer only binds base/format — the chronometer still needs to be
+            // STARTED, via its @RemotableViewMethod setStarted(boolean) (hidden but
+            // reachable through RemoteViews reflection actions; start() is not).
+            views.setBoolean(R.id.countdown, "setStarted", true)
+            // DecoratedCustomViewStyle keeps the system chrome AND the action row around
+            // the custom content — without it the custom views replace the whole
+            // template and "Matikan" never renders.
+            builder.setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            builder.setCustomBigContentView(views).setCustomContentView(views).build()
+        } else {
+            // Stock fallback (system-rendered chronometer, standard size): kept
+            // reachable via USE_REMOTE_COUNTDOWN for a one-const revert.
+            builder
+                .setContentTitle(title)
+                .setContentText(content)
+                .setSubText(subText)
+                .setWhen(targetEpochMillis)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+                .setShowWhen(true)
+                .build()
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(

@@ -48,6 +48,10 @@ class FloatingDropzoneService : Service() {
     private var windowManager: WindowManager? = null
     private var floatingView: View? = null
     private var countdownTextView: TextView? = null
+    private var dismissTargetView: TextView? = null
+
+    /** True while the dragged pill's center is inside the bottom ✕ pad's hit area. */
+    private var isOverDismissTarget = false
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private var updateJob: Job? = null
 
@@ -125,6 +129,36 @@ class FloatingDropzoneService : Service() {
         // the collector's first emission applies the saved palette.
         floatingView = dropzoneContainer
 
+        // Dismiss target: a ✕ pad docked bottom-center in its OWN window. It is strictly
+        // NOT_TOUCHABLE (a visual anchor only) — hit-testing happens against the pill's own
+        // drag stream, so the pad never steals touches from what is under it. Hidden until
+        // the pill is actually dragged; dropping the pill on it stops the service, the same
+        // semantics as the Settings toggle (isRunning reflects off, no preference involved).
+        val density = resources.displayMetrics.density
+        val targetSize = (56 * density).toInt()
+        val dismissTarget = TextView(this).apply {
+            text = "✕"
+            textSize = 16f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+        }
+        dismissTargetView = dismissTarget
+
+        val targetParams = WindowManager.LayoutParams(
+            targetSize,
+            targetSize,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            // No FLAG_LAYOUT_IN_SCREEN: BOTTOM gravity then excludes the nav bar area, so
+            // the pad sits just above the gesture bar.
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = (24 * density).toInt()
+        }
+        windowManager?.addView(dismissTarget, targetParams)
+
         // Drag & Touch handling
         var initialX = 0
         var initialY = 0
@@ -147,13 +181,24 @@ class FloatingDropzoneService : Service() {
                     val deltaY = (event.rawY - initialTouchY).toInt()
                     if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
                         isClick = false
+                        // Reveal the ✕ pad only once the gesture is a confirmed drag.
+                        if (dismissTarget.visibility != View.VISIBLE) {
+                            dismissTarget.visibility = View.VISIBLE
+                        }
                     }
                     params.x = initialX + deltaX
                     params.y = initialY + deltaY
                     windowManager?.updateViewLayout(floatingView, params)
+                    updateDismissHover(dropzoneContainer, dismissTarget, density)
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    if (isOverDismissTarget) {
+                        hideDismissTarget()
+                        stopSelf()
+                        return@setOnTouchListener true
+                    }
+                    hideDismissTarget()
                     if (isClick) {
                         val intent = Intent(this, MainActivity::class.java).apply {
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -161,6 +206,10 @@ class FloatingDropzoneService : Service() {
                         startActivity(intent)
                     }
                     true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    hideDismissTarget()
+                    false
                 }
                 else -> false
             }
@@ -178,6 +227,7 @@ class FloatingDropzoneService : Service() {
                 if (mode != appliedMode) {
                     appliedMode = mode
                     applyDropzonePalette(dropzoneContainer, textView, dropzonePalette(mode))
+                    applyDismissTargetPalette(dismissTarget, dropzonePalette(mode))
                 }
             }
         }
@@ -279,7 +329,67 @@ class FloatingDropzoneService : Service() {
                 e.printStackTrace()
             }
         }
+        dismissTargetView?.let {
+            try {
+                windowManager?.removeView(it)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        dismissTargetView = null
         super.onDestroy()
+    }
+
+    /**
+     * Hit-test the dragged pill's center against the ✕ pad's on-screen bounds (inflated by
+     * a slop ring so a fast release still lands). On transition, pop the pad and tick the
+     * vibrator — [android.view.HapticFeedbackConstants] needs no VIBRATE permission here
+     * and the app waveform stays owned by VibrationAlarmService.
+     */
+    private fun updateDismissHover(pill: View, target: TextView, density: Float) {
+        val loc = IntArray(2)
+        pill.getLocationOnScreen(loc)
+        val pillCx = loc[0] + pill.width / 2
+        val pillCy = loc[1] + pill.height / 2
+
+        val tLoc = IntArray(2)
+        target.getLocationOnScreen(tLoc)
+        val slop = (12 * density).toInt()
+        val over = pillCx >= tLoc[0] - slop && pillCx <= tLoc[0] + target.width + slop &&
+            pillCy >= tLoc[1] - slop && pillCy <= tLoc[1] + target.height + slop
+
+        if (over != isOverDismissTarget) {
+            isOverDismissTarget = over
+            val scale = if (over) 1.2f else 1f
+            target.scaleX = scale
+            target.scaleY = scale
+            // Fade the pill so the ✕ is readable at the drop moment instead of the pad
+            // hiding behind it (chat-heads convention).
+            pill.alpha = if (over) 0.35f else 1f
+            if (over) {
+                target.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+            }
+        }
+    }
+
+    private fun hideDismissTarget() {
+        isOverDismissTarget = false
+        floatingView?.alpha = 1f
+        dismissTargetView?.let {
+            it.visibility = View.GONE
+            it.scaleX = 1f
+            it.scaleY = 1f
+        }
+    }
+
+    private fun applyDismissTargetPalette(target: TextView, palette: DropzonePalette) {
+        val shape = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(palette.fill.toArgb())
+            setStroke(2, palette.stroke.toArgb())
+        }
+        target.background = shape
+        target.setTextColor(palette.onFill.toArgb())
     }
 
     private fun applyDropzonePalette(

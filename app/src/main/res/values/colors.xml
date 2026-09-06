@@ -11,4 +11,11 @@
     <color name="shollu_navy_secondary">#21295C</color>
     <color name="shollu_dark_bg">#121413</color>
     <color name="shollu_dark_surface">#1A1C1B</color>
+
+    <!-- Big-countdown ongoing notification (RemoteViews). Theme attrs like
+         ?android:attr/textColorPrimary resolve against SystemUI's LIGHT inflation
+         theme, which renders near-invisible dark text on the dark shade — use
+         explicit night-qualified resources instead. -->
+    <color name="notification_countdown_primary">#1C1B1F</color>
+    <color name="notification_countdown_secondary">#49454F</color>
 </resources>

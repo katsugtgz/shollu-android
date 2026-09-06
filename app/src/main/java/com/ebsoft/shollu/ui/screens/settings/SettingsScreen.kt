@@ -225,7 +225,7 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Default.VerticalAlignBottom,
                     title = "Status Bar Countdown Berkelanjutan",
-                    subtitle = "Muncul di notification shade; hitung mundur live; tidak bisa diswipe (hanya mati dari tombol ini); tahan DND.",
+                    subtitle = "Muncul di notification shade; hitung mundur live; swipe kiri atau ketuk Matikan untuk menutup; aktifkan kembali dari tombol ini.",
                     trailing = {
                         Switch(
                             checked = isOngoingEnabled,
