@@ -120,15 +120,21 @@ class MainActivity : ComponentActivity() {
                                     // Decorative icon: the visible label() supplies the
                                     // accessible destination name — a contentDescription
                                     // here would make TalkBack announce the tab twice.
+                                    // alwaysShowLabel must stay true: on narrow AVDs M3 can
+                                    // drop unselected labels from the a11y tree (CI release
+                                    // gate looks up text="Pengaturan"; only Beranda remained).
                                     icon = { Icon(screen.icon, contentDescription = null) },
                                     label = {
                                         Text(
                                             screen.title,
                                             style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     },
                                     selected = isSelected,
+                                    alwaysShowLabel = true,
                                     onClick = {
                                         if (currentRoute != screen.route) {
                                             navController.navigate(screen.route) {
