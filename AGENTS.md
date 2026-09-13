@@ -114,7 +114,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 - Release signing: local `app/release.keystore` + `app/signing.properties` (gitignored); same key is in GitHub Secrets (`KEYSTORE_BASE64` + 3) so CI tag releases sign identically.
 - `androidTestImplementation` deps + `testInstrumentationRunner` are declared but no androidTest source set exists (dead config). UI layer has zero test coverage (by design of JVM-only suite).
 - Codegraph: `.mcp.json` declares the server but `.codegraph/` has no index — run `codegraph init` to enable.
-- Themes: Compose screens/components draw exclusively from scheme roles. Kotlin hex literals live only in `ui/theme/Color.kt`/`BrandColors.kt`, the `widget/WidgetTheme.kt` keep, and ARGB masks in `DropzoneTheme.kt`; XML resources (`res/values*/colors.xml`, notification/widget drawables) still carry hex by nature.
+- Themes: Compose screens/components draw exclusively from scheme roles. Compose COLOR literals live only in `ui/theme/Color.kt`/`BrandColors.kt`, the `widget/WidgetTheme.kt` keep, and ARGB masks in `DropzoneTheme.kt`; everything else hex-bearing is not Compose color: XML resources (`res/values*/colors.xml`, drawables), the share-table HTML/CSS string in CalendarScreen, and JVM tests pinning palette constants.
 - "WIB" is hardcoded in share text/scheduler/alarm screens despite City carrying a real timezone.
 - No detekt/ktlint/.editorconfig; zero TODO/FIXME markers in source.
 - Dependabot's static analysis does NOT apply Gradle force pins — build-classpath alerts for netty/grpc/httpclient/commons are false positives against the gate-enforced resolved classpath.
