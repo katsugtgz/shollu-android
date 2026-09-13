@@ -10,6 +10,7 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.Settings
 import android.view.*
 import android.widget.TextView
 import androidx.compose.ui.graphics.toArgb
@@ -25,6 +26,7 @@ import com.ebsoft.shollu.ui.theme.dropzonePalette
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 /** Snapshot of every preference that changes the computed prayer schedule. */
@@ -58,10 +60,17 @@ class FloatingDropzoneService : Service() {
     private lateinit var preferences: SholluPreferences
     private lateinit var prayerRepository: IPrayerRepository
 
-    // The pill is invisible with the screen off, yet the 1 Hz loop kept doing 5 DataStore
-    // reads + a full overlay relayout every second (uptime-based, so it ran all night while
-    // the process was alive). Freeze the loop while the screen is off; the loop recomputes
-    // "now" every iteration, so it self-corrects on screen-on.
+    // Loop-lifetime schedule config snapshot, kept fresh by ONE combine collector (see
+    // createFloatingDropzone). The 1 Hz tick reads this field instead of hitting DataStore
+    // five times a second; null only in the sub-frame before the collector's first
+    // emission. Both the collector and the tick run on the main dispatcher, so plain
+    // field visibility is enough.
+    private var scheduleConfig: ScheduleConfigKey? = null
+
+    // The pill is invisible with the screen off, yet the 1 Hz loop kept ticking anyway
+    // (uptime-based, so it ran all night while the process was alive). Freeze the loop
+    // while the screen is off; the loop recomputes "now" every iteration, so it
+    // self-corrects on screen-on.
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -87,6 +96,17 @@ class FloatingDropzoneService : Service() {
 
     @SuppressLint("InflateParams", "ClickableViewAccessibility")
     private fun createFloatingDropzone() {
+        // Overlay-permission guard: the service keeps the default START_STICKY onStartCommand,
+        // so Android restarts it after a permission revoke or process death. addView() without
+        // canDrawOverlays throws BadTokenException, turning every restart into a crash loop.
+        // Add no views, publish the off state, and stop clean — the Settings toggle then
+        // shows the truth instead of a ghost "running" service.
+        if (!Settings.canDrawOverlays(this)) {
+            _isRunning.value = false
+            stopSelf()
+            return
+        }
+
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -232,6 +252,39 @@ class FloatingDropzoneService : Service() {
             }
         }
 
+        // Schedule-config feeder: ONE combine over the same five flows the tick loop used to
+        // .first() every second (each is mapDistinct on the shared store, so this re-emits
+        // only on a real preference change — and always a consistent snapshot, never a torn
+        // mid-write mix). The tick then pays zero DataStore reads: system clock + snapshot.
+        serviceScope.launch {
+            try {
+                combine(
+                    preferences.selectedCity,
+                    preferences.calculationMethod,
+                    preferences.asrJuristic,
+                    preferences.ihtiyatMinutes,
+                    preferences.customOffsets
+                ) { city, method, juristic, ihtiyat, offsets ->
+                    ScheduleConfigKey(city, method, juristic, ihtiyat, offsets)
+                }.collect { scheduleConfig = it }
+            } catch (e: Exception) {
+                // safeDataStore rethrows non-IOException failures; a silently dead
+                // collector would leave the pill config-less forever. Fall back to one
+                // one-shot snapshot read — a frozen config beats a frozen pill.
+                try {
+                    scheduleConfig = ScheduleConfigKey(
+                        preferences.selectedCity.first(),
+                        preferences.calculationMethod.first(),
+                        preferences.asrJuristic.first(),
+                        preferences.ihtiyatMinutes.first(),
+                        preferences.customOffsets.first()
+                    )
+                } catch (fallbackEx: Exception) {
+                    fallbackEx.printStackTrace()
+                }
+            }
+        }
+
         // Live countdown updater — but only when anyone can see it: a service restart
         // with the screen already off would otherwise run the 1 Hz loop un-gated until
         // the next ACTION_SCREEN_OFF. SCREEN_ON starts it when the display comes back.
@@ -248,40 +301,47 @@ class FloatingDropzoneService : Service() {
             var cachedConfig: ScheduleConfigKey? = null
             var cachedTodayTimes: PrayerTimes? = null
             var cachedTomorrowTimes: PrayerTimes? = null
+            var configWaitTicks = 0
 
             while (isActive) {
-                val city = preferences.selectedCity.first()
-                val method = preferences.calculationMethod.first()
-                val juristic = preferences.asrJuristic.first()
-                val ihtiyat = preferences.ihtiyatMinutes.first()
-                val offsets = preferences.customOffsets.first()
+                // Snapshot from the feeder's cache — no DataStore read on this path. A null
+                // means the first emission has not landed yet (sub-frame on a warm store).
+                // Fast-poll briefly, then fall back to 1 Hz — an emission that never lands
+                // (feeder + snapshot fallback both dead) must degrade to a slow idle wait,
+                // never the uncapped 10 Hz spin.
+                val config = scheduleConfig
+                if (config == null) {
+                    delay(if (configWaitTicks < 50) 100L else 1000L)
+                    configWaitTicks++
+                    continue
+                }
+                configWaitTicks = 0
 
                 // "Now" in the CITY's frame of reference: prayer times are city wall times,
                 // so both the day bucketing and the next-prayer comparison must never use the
                 // device zone.
-                val now = AlarmTime.cityWallClockNow(timezoneHours = city.timezone)
+                val now = AlarmTime.cityWallClockNow(timezoneHours = config.city.timezone)
                 val today = now.toLocalDate()
-                val configKey = ScheduleConfigKey(city, method, juristic, ihtiyat, offsets)
 
                 // Recompute when the day changed OR any schedule-affecting preference changed.
-                if (cachedDate != today || cachedConfig != configKey || cachedTodayTimes == null || cachedTomorrowTimes == null) {
+                if (cachedDate != today || cachedConfig != config || cachedTodayTimes == null || cachedTomorrowTimes == null) {
                     cachedDate = today
-                    cachedConfig = configKey
+                    cachedConfig = config
                     cachedTodayTimes = prayerRepository.calculateForDate(
                         date = today,
-                        city = city,
-                        method = method,
-                        juristic = juristic,
-                        ihtiyat = ihtiyat,
-                        offsets = offsets
+                        city = config.city,
+                        method = config.method,
+                        juristic = config.juristic,
+                        ihtiyat = config.ihtiyatMinutes,
+                        offsets = config.customOffsets
                     )
                     cachedTomorrowTimes = prayerRepository.calculateForDate(
                         date = today.plusDays(1),
-                        city = city,
-                        method = method,
-                        juristic = juristic,
-                        ihtiyat = ihtiyat,
-                        offsets = offsets
+                        city = config.city,
+                        method = config.method,
+                        juristic = config.juristic,
+                        ihtiyat = config.ihtiyatMinutes,
+                        offsets = config.customOffsets
                     )
                 }
 
@@ -294,7 +354,7 @@ class FloatingDropzoneService : Service() {
                 // whenever the device zone differs from the city.
                 val totalSeconds = AlarmTime.remainingSecondsUntilCityWall(
                     target = targetDateTime,
-                    timezoneHours = city.timezone,
+                    timezoneHours = config.city.timezone,
                     deviceEpochMillis = System.currentTimeMillis()
                 )
 
@@ -307,7 +367,15 @@ class FloatingDropzoneService : Service() {
                 val targetIsTomorrow = targetDateTime.toLocalDate() != today
                 val prayerName = effectiveTargetType.displayName + if (targetIsTomorrow) " (Besok)" else ""
 
-                countdownTextView?.text = String.format("%s %02d:%02d (%02d:%02d:%02d)", prayerName, effectiveTargetTime.hour, effectiveTargetTime.minute, h, m, s)
+                // Assigning .text even to an identical string invalidates the view (a full
+                // overlay relayout at 1 Hz); skip the write when nothing actually changed.
+                val formatted = String.format(
+                    "%s %02d:%02d (%02d:%02d:%02d)",
+                    prayerName, effectiveTargetTime.hour, effectiveTargetTime.minute, h, m, s
+                )
+                if (countdownTextView?.text?.toString() != formatted) {
+                    countdownTextView?.text = formatted
+                }
                 delay(1000L)
             }
         }
