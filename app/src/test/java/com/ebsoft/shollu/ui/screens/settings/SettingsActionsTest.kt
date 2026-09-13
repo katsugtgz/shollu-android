@@ -2,7 +2,11 @@ package com.ebsoft.shollu.ui.screens.settings
 
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -38,11 +42,19 @@ class SettingsActionsTest {
         var ongoingEnabled: Boolean? = null
     }
 
-    private class Harness {
+    private class Harness(val recorder: Recorder = Recorder()) {
         var overlayGranted = true
         var failNextWrite = false
 
-        val recorder = Recorder()
+        /**
+         * Suspension point injected into rescheduleAlarms so concurrent-tap tests get a real
+         * interleaving window (the real seam suspends on DataStore/AlarmManager I/O).
+         */
+        var rescheduleHook: suspend () -> Unit = {}
+
+        /** Same idea for refreshWidgets (widget re-render I/O). */
+        var widgetHook: suspend () -> Unit = {}
+
         val prefs = FakePrefs()
         val actions = SettingsActions(
             mutations = object : SettingsMutations {
@@ -86,8 +98,14 @@ class SettingsActionsTest {
                     recorder.write("ongoing=$enabled")
                 }
             },
-            rescheduleAlarms = { recorder.reschedule() },
-            refreshWidgets = { recorder.widget() },
+            rescheduleAlarms = {
+                rescheduleHook()
+                recorder.reschedule()
+            },
+            refreshWidgets = {
+                widgetHook()
+                recorder.widget()
+            },
             startOngoingService = { enabled -> recorder.service("ongoing=$enabled") },
             startVibrationTest = { recorder.service("vibrationTest") },
             setDropzoneRunning = { start -> recorder.service("dropzone=$start") },
@@ -145,6 +163,86 @@ class SettingsActionsTest {
         assertEquals(3, h.prefs.ihtiyatMinutes)
         assertEquals(
             listOf("write:ihtiyat=4", "reschedule", "widget", "write:ihtiyat=3", "reschedule", "widget"),
+            h.recorder.events
+        )
+    }
+
+    @Test
+    fun testRapidIhtiyatTapsSerializeTheWholeWriteRescheduleWidgetSequence() = runTest {
+        // Regression (bot review round): DataStore serializes the WRITE, but two rapid taps'
+        // follow-up effects could interleave (write, write, reschedule, reschedule, widget,
+        // widget) and let the OLDER widget render land after the newest write. One sequence
+        // lock must keep each tap's write -> reschedule -> widget contiguous even when the
+        // reschedule suspends mid-sequence.
+        val h = Harness()
+        h.prefs.ihtiyatMinutes = 5
+        h.rescheduleHook = { yield() } // interleaving window the real seam also has
+        val taps = listOf(
+            launch { h.actions.changeIhtiyat(delta = +1) },
+            launch { h.actions.changeIhtiyat(delta = +1) }
+        )
+        taps.joinAll()
+        assertEquals(7, h.prefs.ihtiyatMinutes)
+        assertEquals(
+            listOf(
+                "write:ihtiyat=6", "reschedule", "widget",
+                "write:ihtiyat=7", "reschedule", "widget"
+            ),
+            h.recorder.events
+        )
+    }
+
+    @Test
+    fun testSequenceLockIsSharedAcrossSettingsActionsInstances() = runTest {
+        // Regression (bot review round): an Activity recreation mints a new SettingsActions —
+        // the sequence lock must live at companion level so taps racing across the old and the
+        // new instance still serialize instead of interleaving their widget renders.
+        val sharedRecorder = Recorder()
+        val old = Harness(sharedRecorder)
+        val recreated = Harness(sharedRecorder)
+        old.rescheduleHook = { yield() }
+        recreated.rescheduleHook = { yield() }
+        val taps = listOf(
+            launch { old.actions.changeIhtiyat(delta = +1) },
+            launch { recreated.actions.changeIhtiyat(delta = +1) }
+        )
+        taps.joinAll()
+        // Both instances compute 2 -> 3; the assertion is that neither sequence interleaves
+        // its reschedule/widget into the other's write (an instance-level lock would emit
+        // write, write, reschedule, reschedule, widget, widget).
+        assertEquals(
+            listOf(
+                "write:ihtiyat=3", "reschedule", "widget",
+                "write:ihtiyat=3", "reschedule", "widget"
+            ),
+            sharedRecorder.events
+        )
+    }
+
+    @Test
+    fun testUnrelatedControlsRunOnSeparateLanesWhileAWidgetRefreshStalls() = runTest {
+        // Regression (cubic PR-28 round): the first cut serialized EVERY control behind one
+        // shared lock — a slow THEME widget refresh would then delay an ONGOING toggle's
+        // startOngoingService dispatch (the only kill path for the foreground notification).
+        // Lanes are per control: ONGOING must complete while THEME is suspended mid-widget.
+        val h = Harness()
+        val themeStalled = CompletableDeferred<Unit>()
+        val releaseTheme = CompletableDeferred<Unit>()
+        h.widgetHook = {
+            themeStalled.complete(Unit)
+            releaseTheme.await()
+        }
+        val theme = launch { h.actions.setThemeMode(ThemeMode.AMOLED) }
+        themeStalled.await() // THEME now holds its lane, suspended in refreshWidgets
+        h.actions.setOngoingNotification(false) // must NOT queue behind the stalled THEME lane
+        assertEquals(
+            listOf("write:theme=AMOLED", "write:ongoing=false", "service:ongoing=false"),
+            h.recorder.events
+        )
+        releaseTheme.complete(Unit)
+        theme.join()
+        assertEquals(
+            listOf("write:theme=AMOLED", "write:ongoing=false", "service:ongoing=false", "widget"),
             h.recorder.events
         )
     }

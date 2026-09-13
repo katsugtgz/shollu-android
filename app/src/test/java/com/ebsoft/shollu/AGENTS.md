@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-27 JVM-only suites, 187 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
+31 JVM-only suites, 209 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
 
 ## WHERE TO LOOK
 
@@ -10,7 +10,7 @@
 |---|---|
 | Fake-clock / virtual-time pattern | `DatePulseFlowTest.kt` (`FakeClock(var dateTime): AppClock`, `runTest` + `advanceTimeBy`) |
 | Inline repo fakes + cache identity proof | `RepositoryAndSeamsTest.kt` (`object : IPrayerRepository` w/ in-memory `mutableMapOf`, `assertSame`) |
-| Alarm pipeline regressions (570 ln, largest file in repo) | `AlarmPipelineHardeningTest.kt` |
+| Alarm pipeline regressions (918 ln, largest file in repo) | `AlarmPipelineHardeningTest.kt` |
 | Request-code invariants (zero-collision, disjoint, odd pre-codes) | `LifecycleAdversarialTest.kt`, `receiver/AlarmSchedulerRound2Test.kt` |
 | Astronomical stress (polar/leap/equinox/Hijri 100-yr/Kaaba antipodal) | `AdversarialStressTest.kt` (numbered `testVector1..5`) |
 | Room (only converters + seed plan) | `DataAndLocationTest.kt`, `data/db/SeedPlanRound2Test.kt` |

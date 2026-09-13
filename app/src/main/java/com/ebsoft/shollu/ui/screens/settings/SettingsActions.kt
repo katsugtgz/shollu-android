@@ -2,6 +2,8 @@ package com.ebsoft.shollu.ui.screens.settings
 
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Narrow write seam over [com.ebsoft.shollu.data.preferences.SholluPreferences]: exactly the
@@ -45,6 +47,12 @@ interface SettingsMutations {
  *  - Tes getar         -> no  / no  / no  / start VibrationAlarmService test
  *  - Floating dropzone -> no  / no  / no  / overlay-permission gate, then start/stop service
  *
+ * Every sequence that pairs a write with downstream effects runs under a PER-CONTROL lane
+ * lock (see [EffectLane] below) — the matrix decides WHICH effects fire, the lane lock only
+ * keeps each tap's write -> effect chain contiguous against rapid taps on the SAME control,
+ * without making an unrelated control wait behind a slow widget refresh. Write-only rows
+ * (Hijri adjustment, max vibration) stay unlocked: DataStore already serializes their edits.
+ *
  * The City row is intentionally absent: it only opens the location picker — the city write +
  * reschedule + widget refresh happen in the picker/GPS flow (MainActivity, issue #19).
  */
@@ -59,8 +67,32 @@ class SettingsActions(
     private val requestOverlayPermission: () -> Unit,
 ) {
 
-    /** Metode Hisab: write -> reschedule -> refresh widget. */
-    suspend fun setCalculationMethod(method: CalculationMethod) {
+    companion object {
+        /**
+         * One lane per control-with-effects: each control's write -> reschedule -> widget /
+         * service sequence is contiguous against rapid taps on THAT control, while unrelated
+         * controls never queue behind each other's slow effects (an ONGOING toggle must not
+         * wait out a THEME widget refresh, and vice versa). Companion-level on purpose — an
+         * Activity recreation mints a fresh [SettingsActions], and same-control sequences
+         * must still serialize across instances.
+         *
+         * Tap ORDERING model: callers launch each call on the application scope, so lane
+         * acquisition order follows coroutine dispatch order, which follows launch (tap)
+         * order. Even where that order were to flip inside a lane, the persisted outcome
+         * stays correct: stepper writes are atomic persisted RMWs (deltas commute), value
+         * writes are last-writer-wins, and every downstream effect re-reads the preference
+         * source of truth at effect time — no effect carries tap-time captured state, so a
+         * late-running older sequence can only re-render what is ALREADY persisted.
+         */
+        private val effectLaneLocks = java.util.concurrent.ConcurrentHashMap<EffectLane, Mutex>()
+
+        private enum class EffectLane { CALCULATION_METHOD, IHTIYAT, PRE_PRAYER, THEME_MODE, ONGOING_NOTIFICATION }
+
+        private fun lane(lane: EffectLane): Mutex = effectLaneLocks.getOrPut(lane) { Mutex() }
+    }
+
+    /** Metode Hisab: write -> reschedule -> refresh widget, serialized end-to-end. */
+    suspend fun setCalculationMethod(method: CalculationMethod) = lane(EffectLane.CALCULATION_METHOD).withLock {
         mutations.updateCalculationMethod(method)
         rescheduleAlarms()
         refreshWidgets()
@@ -70,9 +102,11 @@ class SettingsActions(
      * Ihtiyat stepper (clamped 0..10 in the DataStore edit): write -> reschedule -> refresh
      * widget. The delta is applied ATOMICALLY to the persisted value inside a single DataStore
      * edit transform — serialized by DataStore itself — so rapid taps and recreated-Activity
-     * action instances can never lose an increment.
+     * action instances can never lose an increment. The edit only serializes the WRITE: the
+     * follow-up reschedule + widget of two rapid taps could still interleave, so the whole
+     * sequence holds its lane lock and the newest write also owns the last render.
      */
-    suspend fun changeIhtiyat(delta: Int) {
+    suspend fun changeIhtiyat(delta: Int) = lane(EffectLane.IHTIYAT).withLock {
         mutations.adjustIhtiyatMinutes(delta)
         rescheduleAlarms()
         refreshWidgets()
@@ -83,8 +117,8 @@ class SettingsActions(
         mutations.adjustHijriAdjustment(delta)
     }
 
-    /** Pre-prayer alert toggle: write -> reschedule. No widget refresh. */
-    suspend fun setPrePrayerAlert(enabled: Boolean, minutes: Int) {
+    /** Pre-prayer alert toggle: write -> reschedule, serialized end-to-end. No widget refresh. */
+    suspend fun setPrePrayerAlert(enabled: Boolean, minutes: Int) = lane(EffectLane.PRE_PRAYER).withLock {
         mutations.setPrePrayerAlert(enabled, minutes)
         rescheduleAlarms()
     }
@@ -94,8 +128,11 @@ class SettingsActions(
         mutations.setMaxVibrationEnabled(enabled)
     }
 
-    /** ThemeMode: write -> refresh widget (tile colors follow the mode). No reschedule. */
-    suspend fun setThemeMode(mode: ThemeMode) {
+    /**
+     * ThemeMode: write -> refresh widget (tile colors follow the mode), serialized end-to-end
+     * so an older palette cannot land after the newest mode. No reschedule.
+     */
+    suspend fun setThemeMode(mode: ThemeMode) = lane(EffectLane.THEME_MODE).withLock {
         mutations.setThemeMode(mode)
         refreshWidgets()
     }
@@ -104,9 +141,10 @@ class SettingsActions(
      * Ongoing notification toggle: write FIRST, then start/stop the service — the service
      * reads the preference when it comes up, so ordering matters. The service dispatch runs in
      * [finally]: it is the ONLY kill path for the unswipeable foreground notification, so a
-     * failed/stalled write must never silently skip it.
+     * failed/stalled write must never silently skip it. Serialized end-to-end (its lane) so two rapid
+     * toggles cannot dispatch a service start that lands after the newest write.
      */
-    suspend fun setOngoingNotification(enabled: Boolean) {
+    suspend fun setOngoingNotification(enabled: Boolean) = lane(EffectLane.ONGOING_NOTIFICATION).withLock {
         try {
             mutations.setOngoingNotificationEnabled(enabled)
         } finally {
