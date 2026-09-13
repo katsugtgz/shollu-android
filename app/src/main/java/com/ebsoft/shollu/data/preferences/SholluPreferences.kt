@@ -38,6 +38,16 @@ class SholluPreferences(private val context: Context) {
         /** Seeded-once marker for the default preset reminders (see SholluDatabase.seedPlan). */
         val DEFAULT_PRESETS_SEEDED = booleanPreferencesKey("default_presets_seeded")
 
+        /**
+         * Fingerprint of the last COMPLETED prayer-fleet arm pass
+         * (see AlarmScheduler.armingFingerprint). Absent = never armed since install (or the
+         * DataStore was recreated) — the next arm must run, never skip.
+         */
+        val ALARM_ARM_FINGERPRINT = stringPreferencesKey("alarm_arm_fingerprint")
+
+        /** Same contract as [ALARM_ARM_FINGERPRINT], for the agenda-reminder fleet. */
+        val REMINDER_ARM_FINGERPRINT = stringPreferencesKey("reminder_arm_fingerprint")
+
         val CALCULATION_METHOD = stringPreferencesKey("calculation_method")
         val ASR_JURISTIC = stringPreferencesKey("asr_juristic")
         val IHTIYAT_MINUTES = intPreferencesKey("ihtiyat_minutes")
@@ -154,6 +164,20 @@ class SholluPreferences(private val context: Context) {
     }
 
     /**
+     * Fingerprint of the last COMPLETED prayer-fleet arm pass; null until the first
+     * successful sweep persists one. Written only by AlarmScheduler, only after its
+     * arm-or-cancel sweep finished.
+     */
+    val alarmArmFingerprint: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[ALARM_ARM_FINGERPRINT]
+    }
+
+    /** Same contract as [alarmArmFingerprint], for the agenda-reminder fleet. */
+    val reminderArmFingerprint: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[REMINDER_ARM_FINGERPRINT]
+    }
+
+    /**
      * Persist the selected city. [isGps] marks a GPS-derived city (DST-re-derivation eligible);
      * fixed-list selections keep the default false, so choosing a city from the list always
      * clears the flag.
@@ -173,6 +197,24 @@ class SholluPreferences(private val context: Context) {
     suspend fun markDefaultPresetsSeeded() {
         context.dataStore.edit { prefs ->
             prefs[DEFAULT_PRESETS_SEEDED] = true
+        }
+    }
+
+    /**
+     * Record the prayer fleet's armed fingerprint. Only AlarmScheduler writes this, and only
+     * AFTER a completed arm-or-cancel sweep — a mid-sweep crash must leave the previous value
+     * so the next run re-arms instead of skipping on a stale "armed" marker.
+     */
+    suspend fun setAlarmArmFingerprint(value: String) {
+        context.dataStore.edit { prefs ->
+            prefs[ALARM_ARM_FINGERPRINT] = value
+        }
+    }
+
+    /** Same ordering contract as [setAlarmArmFingerprint], for the reminder fleet. */
+    suspend fun setReminderArmFingerprint(value: String) {
+        context.dataStore.edit { prefs ->
+            prefs[REMINDER_ARM_FINGERPRINT] = value
         }
     }
 

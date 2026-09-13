@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 object ReminderAlarmScheduler {
@@ -26,6 +27,14 @@ object ReminderAlarmScheduler {
      * the receiver then disables the DB row but the batch's fresh alarm stays live.
      */
     private val rescheduleMutex = Mutex()
+
+    /**
+     * Bump when [armingFingerprint]'s composition changes, so a value persisted by an older
+     * build can never equal a freshly computed fingerprint (and silently skip an arm).
+     * v2: free-text fields are length-prefixed via [AlarmScheduler.fingerprintField] —
+     * titles/descriptions containing ':' or ';' used to be able to collide.
+     */
+    private const val FINGERPRINT_VERSION = "v2"
 
     /**
      * Disjoint request code formula for Agenda Reminders to prevent collisions with prayer alarms.
@@ -104,13 +113,72 @@ object ReminderAlarmScheduler {
     }
 
     /**
+     * Fingerprint of every input the batch arm derives reminder instants from: the city's
+     * fixed offset (epoch conversion + the "now" frame), the full set of active reminder rows
+     * (trigger fields AND intent extras — title/description/isMaxVibration ride the armed
+     * PendingIntent), and the city-frame day the next occurrence is computed on (guarantees
+     * at least one real sweep per day, bounding the damage of a post-fire re-arm killed
+     * mid-goAsync). Rows are folded id-sorted so the DAO's return order cannot matter.
+     * A persisted fingerprint equal to the computed one lets the cold-start path
+     * ([scheduleAllActiveReminders]'s skipIfUnchanged) skip the sweep with zero
+     * AlarmManager IPCs — see AlarmScheduler.armingFingerprint for the prayer twin.
+     */
+    fun armingFingerprint(
+        reminders: List<ReminderEntity>,
+        timezoneHours: Double,
+        windowStart: LocalDate
+    ): String = listOf(
+        FINGERPRINT_VERSION,
+        timezoneHours.toString(),
+        windowStart.toEpochDay().toString(),
+        // Free-text fields (rawValue/title/description) are length-prefixed so user text
+        // containing ':' or ';' cannot collide two different rows into one fingerprint
+        // (see AlarmScheduler.fingerprintField); numeric/boolean fields are separator-free.
+        reminders.sortedBy { it.id }.joinToString(";") { r ->
+            "${r.id}:${r.timeHour}:${r.timeMinute}:" +
+                "${AlarmScheduler.fingerprintField(r.daysOfWeek.rawValue)}:" +
+                "${r.isEnabled}:${r.isMaxVibration}:" +
+                "${AlarmScheduler.fingerprintField(r.title)}:${AlarmScheduler.fingerprintField(r.description)}"
+        }
+    ).joinToString("|")
+
+    /**
+     * AlarmManager-state twin of [AlarmScheduler.fleetIsArmed]: the fingerprint models the
+     * DB rows, not the armed PendingIntents — force-stop wipes them all with the rows
+     * unchanged. Every active row's code is probed with NO_CREATE; any miss falls through
+     * to the full re-arm. An empty active set owes no alarms and counts as armed.
+     */
+    internal fun reminderFleetIsArmed(context: Context, reminders: List<ReminderEntity>): Boolean =
+        reminders.all { reminder ->
+            val probe = Intent(context, ReminderAlarmReceiver::class.java).apply {
+                action = ReminderAlarmReceiver.ACTION_REMINDER_ALARM
+            }
+            PendingIntent.getBroadcast(
+                context,
+                getReminderRequestCode(reminder.id),
+                probe,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            ) != null
+        }
+
+    /**
      * Schedule all active reminders from Room database with AlarmManager.
      *
      * @param reschedulingAfterBoot true on the BOOT_COMPLETED / MY_PACKAGE_REPLACED path only:
      * a past-due ONCE reminder is not re-armed for tomorrow (that would re-fire a stale event);
-     * instead it is disabled in the DB and its alarm cancelled — documented as expired.
+     * instead it is disabled in the DB and its alarm cancelled — documented as expired. The
+     * boot path NEVER skips, whatever [skipIfUnchanged] says — the expired-ONCE disabling
+     * above is boot-only work that a fingerprint match must not swallow.
+     * @param skipIfUnchanged set ONLY by the SholluApplication boot block: when the active
+     * reminder rows, the city offset and the city-frame day are unchanged since the last
+     * completed pass (see [armingFingerprint]), the sweep is skipped — a widget-tick cold
+     * start then costs no AlarmManager IPCs.
      */
-    suspend fun scheduleAllActiveReminders(context: Context, reschedulingAfterBoot: Boolean = false) {
+    suspend fun scheduleAllActiveReminders(
+        context: Context,
+        reschedulingAfterBoot: Boolean = false,
+        skipIfUnchanged: Boolean = false
+    ) {
         rescheduleMutex.withLock {
             val db = SholluDatabase.getDatabase(context, CoroutineScope(Dispatchers.IO))
             val activeReminders = db.reminderDao().getActiveReminders()
@@ -118,8 +186,22 @@ object ReminderAlarmScheduler {
             // decides both the ONCE-expiry check and every epoch conversion (city frame, never
             // the device zone). Serializing the read+arm pair is what makes concurrent runs
             // act on a consistent city snapshot instead of a torn mix of offsets.
-            val timezoneHours = SholluPreferences(context).selectedCity.first().timezone
+            val preferences = SholluPreferences(context)
+            val timezoneHours = preferences.selectedCity.first().timezone
             val cityNow = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
+
+            // Cold-start churn guard: bail BEFORE any AlarmManager IPC. Boot keeps the full
+            // sweep unconditionally (expired-ONCE disabling lives below), and the fleet probe
+            // proves the armed PendingIntents still exist (force-stop wipes them while the
+            // fingerprint inputs stay unchanged).
+            val fingerprint = armingFingerprint(activeReminders, timezoneHours, cityNow.toLocalDate())
+            val persistedFingerprint = if (skipIfUnchanged) preferences.reminderArmFingerprint.first() else null
+            if (!reschedulingAfterBoot &&
+                skipIfUnchanged &&
+                AlarmScheduler.shouldSkipArm(persistedFingerprint, fingerprint) &&
+                reminderFleetIsArmed(context, activeReminders)
+            ) return@withLock
+
             for (reminder in activeReminders) {
                 if (reschedulingAfterBoot && hasExpiredOnceReminder(reminder, cityNow)) {
                     // Targeted column update: the entity may predate a concurrent user edit,
@@ -129,6 +211,13 @@ object ReminderAlarmScheduler {
                     continue
                 }
                 scheduleReminderLocked(context, reminder, timezoneHours)
+            }
+
+            // Persist only AFTER a completed batch — the skip return above and a mid-batch
+            // crash must leave the previous value, or the next cold start would skip on an
+            // "armed" marker for alarms that were never armed.
+            if (persistedFingerprint != fingerprint) {
+                preferences.setReminderArmFingerprint(fingerprint)
             }
         }
     }

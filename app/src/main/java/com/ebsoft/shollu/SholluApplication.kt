@@ -47,11 +47,18 @@ class SholluApplication : Application() {
             //    actually get alarms on a fresh install (seeded-once marker via preferences)
             database.ensureDefaultPresets(preferences)
 
-            // 3. Schedule upcoming exact alarms
-            AlarmScheduler.scheduleNextPrayerAlarms(this@SholluApplication)
+            // 3. Schedule upcoming exact alarms. skipIfUnchanged: the widget's 30-min tick
+            //    cold-starts this process up to 48x/day and every cold start used to re-arm
+            //    the whole fleet for nothing — with every arming input unchanged, the
+            //    scheduler now no-ops (zero AlarmManager IPCs, zero solar math). Every other
+            //    arm path (boot receiver, settings toggles, post-fire re-arm, city/GPS
+            //    change) still sweeps unconditionally.
+            AlarmScheduler.scheduleNextPrayerAlarms(this@SholluApplication, skipIfUnchanged = true)
 
-            // 4. Arm enabled agenda reminders (now includes the freshly seeded presets)
-            ReminderAlarmScheduler.scheduleAllActiveReminders(this@SholluApplication)
+            // 4. Arm enabled agenda reminders (now includes the freshly seeded presets) —
+            //    same skip-if-unchanged cold-start guard as the prayer fleet above. A fresh
+            //    install arms for real: no fingerprint has been persisted yet.
+            ReminderAlarmScheduler.scheduleAllActiveReminders(this@SholluApplication, skipIfUnchanged = true)
 
             // 5. Start Ongoing Status Bar Notification if enabled
             val isOngoingEnabled = preferences.isOngoingNotificationEnabled.first()

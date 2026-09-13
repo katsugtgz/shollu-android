@@ -3,6 +3,9 @@ package com.ebsoft.shollu
 import com.ebsoft.shollu.data.db.SholluDatabase
 import com.ebsoft.shollu.data.db.entity.DaysOfWeek
 import com.ebsoft.shollu.data.db.entity.ReminderEntity
+import com.ebsoft.shollu.data.model.AsrJuristic
+import com.ebsoft.shollu.data.model.CalculationMethod
+import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
 import com.ebsoft.shollu.receiver.AlarmScheduler
@@ -34,6 +37,8 @@ import java.util.concurrent.TimeUnit
  *  - Fix 8: skipping prayers flagged invalid (polar cities)
  *  - Fix 9: expired ONCE reminders not re-armed after boot
  *  - Fix 10: timezone label mapping
+ *  - Cold-start churn guard: the boot-block arming skips when the armed fingerprint is
+ *    unchanged (prayer + reminder fleets), and re-runs the full sweep on any input change
  */
 class AlarmPipelineHardeningTest {
 
@@ -553,8 +558,260 @@ class AlarmPipelineHardeningTest {
     }
 
     // =========================================================================
+    // Cold-start churn guard: armed-fingerprint skip of the boot-block arming
+    // =========================================================================
+
+    /**
+     * Regression (a): the widget's 30-min tick cold-starts the process up to 48x/day and every
+     * cold start re-armed the whole fleet for nothing. The second arm call with an IDENTICAL
+     * fingerprint must skip — and a null persisted fingerprint (fresh install, first run
+     * after the key was introduced, recreated DataStore) must NEVER skip, or the first arm
+     * would be swallowed and no alarm would ever be armed. (The early-return itself lives in
+     * the Android body — Context/DataStore/AlarmManager, JVM-untestable; this pins the exact
+     * decision seam it hinges on, computed the same way from the same snapshot shape.)
+     */
+    @Test
+    fun testUnchangedArmedFingerprintSkipsColdStartFleetReArm() {
+        val firstFingerprint = prayerFingerprint(baselineArmSnapshot())
+
+        // First arm (nothing persisted yet): full sweep
+        assertFalse(
+            "null persisted fingerprint must never skip — the first arm must run",
+            AlarmScheduler.shouldSkipArm(null, firstFingerprint)
+        )
+
+        // The sweep completed and persisted its fingerprint; an identical second cold start
+        // (same snapshot, same city-frame day) computes the same fingerprint...
+        val secondFingerprint = prayerFingerprint(baselineArmSnapshot())
+        assertEquals(
+            "identical snapshots must fingerprint identically",
+            firstFingerprint, secondFingerprint
+        )
+
+        // ...and skips: zero setAlarmClock/cancel operations, zero solar math.
+        assertTrue(
+            "an unchanged fingerprint must skip the boot-block re-arm",
+            AlarmScheduler.shouldSkipArm(firstFingerprint, secondFingerprint)
+        )
+    }
+
+    /**
+     * Regression (b), fingerprint half: ANY single input the sweep derives instants from —
+     * city tuple, method, juristic, ihtiyat, each custom offset, both pre-prayer settings,
+     * the window date — must break the match, or a needed re-arm would be skipped and the
+     * OLD city's / OLD method's alarms would stay live.
+     */
+    @Test
+    fun testEverySingleArmingInputChangeBreaksTheColdStartSkip() {
+        val base = baselineArmSnapshot()
+        val baseFingerprint = prayerFingerprint(base)
+
+        val mutations = listOf(
+            "city name" to base.copy(city = base.city.copy(name = "Bandung (Jawa Barat)")),
+            "city latitude" to base.copy(city = base.city.copy(latitude = -6.9218)),
+            "city longitude" to base.copy(city = base.city.copy(longitude = 107.6070)),
+            "city elevation" to base.copy(city = base.city.copy(elevation = 768.0)),
+            "city timezone" to base.copy(city = base.city.copy(timezone = 8.0)),
+            "calculation method" to base.copy(method = CalculationMethod.MUSLIM_WORLD_LEAGUE),
+            "asr juristic" to base.copy(juristic = AsrJuristic.HANAFI),
+            "ihtiyat minutes" to base.copy(ihtiyat = 3),
+            "subuh offset" to base.copy(offsets = base.offsets + ("SUBUH" to 5)),
+            "dzuhur offset" to base.copy(offsets = base.offsets + ("DZUHUR" to 1)),
+            "ashar offset" to base.copy(offsets = base.offsets + ("ASHAR" to -2)),
+            "maghrib offset" to base.copy(offsets = base.offsets + ("MAGHRIB" to 3)),
+            "isya offset" to base.copy(offsets = base.offsets + ("ISYA" to -1)),
+            "pre-prayer disabled" to base.copy(preEnabled = false),
+            "pre-prayer minutes" to base.copy(preMinutes = 15),
+            "window date rolled past midnight" to base.copy(now = base.now.plusDays(1))
+        )
+        for ((label, mutated) in mutations) {
+            val mutatedFingerprint = prayerFingerprint(mutated)
+            assertNotEquals("changed [$label] must change the fingerprint", baseFingerprint, mutatedFingerprint)
+            assertFalse(
+                "changed [$label] must re-run the sweep, not skip",
+                AlarmScheduler.shouldSkipArm(baseFingerprint, mutatedFingerprint)
+            )
+        }
+    }
+
+    /**
+     * The fingerprint must not depend on the offsets map's iteration order (HashMap vs the
+     * fixed-key map preferences emit) nor compute non-deterministically — a false mismatch
+     * merely re-arms, but determinism is what makes the skip above trustworthy.
+     */
+    @Test
+    fun testPrayerArmingFingerprintIsDeterministicAndOffsetOrderInsensitive() {
+        val base = baselineArmSnapshot()
+        assertEquals(prayerFingerprint(base), prayerFingerprint(baselineArmSnapshot()))
+
+        val reordered = HashMap<String, Int>()
+        for (key in listOf("ISYA", "ASHAR", "MAGHRIB", "DZUHUR", "SUBUH")) {
+            reordered[key] = base.offsets.getValue(key)
+        }
+        assertEquals(
+            "offset entry order must not change the fingerprint",
+            prayerFingerprint(base), prayerFingerprint(base.copy(offsets = reordered))
+        )
+    }
+
+    /**
+     * Regression (b), sweep half: with an arming input changed (city, method, ihtiyat,
+     * pre-prayer minutes, window date), the re-run must be the FULL arm-or-explicitly-cancel
+     * sweep exactly as today — both window days, main AND pre code per slot, past slots
+     * explicitly cancelled rather than silently skipped. Mirrors the sweep composition at its
+     * pure seams (same trick as testPipelineCompositionArmsCityOffsetSlotsAndSweepsPrePrayerCodes;
+     * the AlarmManager calls themselves are JVM-untestable).
+     */
+    @Test
+    fun testChangedArmingInputReRunsFullArmOrCancelSweepIncludingCancels() {
+        val base = baselineArmSnapshot()
+        val persistedFingerprint = prayerFingerprint(base)
+
+        // Baseline sweep shape: 10 window slots x (main + pre) = 20 one-shot operations,
+        // each slot code touched exactly once.
+        val baselineOps = mirrorSweepOps(base)
+        assertEquals("10 slots x (main + pre)", 20, baselineOps.size)
+        assertEquals("every window code touched exactly once", 20,
+            baselineOps.map { it.substringAfter(':') }.toSet().size)
+        assertTrue(
+            "today's already-passed Subuh must be explicitly cancelled, never silently skipped",
+            baselineOps.contains(
+                "cancel:" + AlarmScheduler.getRequestCode(LocalDate.of(2026, 8, 29), PrayerType.SUBUH, isPrePrayer = false)
+            )
+        )
+
+        val reruns = listOf(
+            "city" to base.copy(city = base.city.copy(name = "Makassar (Sulawesi Selatan)", latitude = -5.1477, longitude = 119.4327, timezone = 8.0)),
+            "method" to base.copy(method = CalculationMethod.KARACHI),
+            "ihtiyat" to base.copy(ihtiyat = 5),
+            "pre-prayer minutes" to base.copy(preMinutes = 15),
+            "window date" to base.copy(now = base.now.plusDays(1))
+        )
+        for ((label, changed) in reruns) {
+            assertFalse(
+                "[$label] changed -> no skip",
+                AlarmScheduler.shouldSkipArm(persistedFingerprint, prayerFingerprint(changed))
+            )
+            val ops = mirrorSweepOps(changed)
+            assertEquals("[$label] re-run covers both window days, main+pre", 20, ops.size)
+            assertEquals("[$label] re-run touches every code exactly once", 20,
+                ops.map { it.substringAfter(':') }.toSet().size)
+            assertTrue("[$label] re-run keeps explicit-cancel branches", ops.any { it.startsWith("cancel:") })
+        }
+
+        // Pre-prayer toggle-off: the sweep's cancel half — every window pre code is explicitly
+        // cancelled, exactly the set allPrePrayerRequestCodes enumerates, plus the already
+        // passed main Subuh of today (even code) — never a silently skipped slot.
+        val expectedPreCancels = AlarmScheduler.allPrePrayerRequestCodes(
+            AlarmScheduler.getSchedulingWindow(base.now)
+        ).map { it.toString() }.toSet()
+        val actualCancels = mirrorSweepOps(base.copy(preEnabled = false))
+            .filter { it.startsWith("cancel:") }
+            .map { it.substringAfter(':') }
+            .toSet()
+        assertTrue(
+            "disabled toggle must explicitly cancel every window pre alarm",
+            actualCancels.containsAll(expectedPreCancels)
+        )
+        assertEquals(
+            "only the pre sweep + today's passed main Subuh are cancelled",
+            expectedPreCancels.size + 1, actualCancels.size
+        )
+    }
+
+    /**
+     * Reminder fleet twin of the churn guard: the batch arm's fingerprint must track every
+     * active row (trigger fields AND the intent extras that ride the PendingIntent) plus the
+     * frame inputs (city offset, city-frame day), and must not care about DAO row order.
+     */
+    @Test
+    fun testReminderArmingFingerprintTracksEveryRowAndFrameInput() {
+        val date = LocalDate.of(2026, 8, 29)
+        val rows = reminderRows()
+        val base = ReminderAlarmScheduler.armingFingerprint(rows, 7.0, date)
+
+        assertEquals("identical inputs fingerprint identically", base,
+            ReminderAlarmScheduler.armingFingerprint(rows, 7.0, date))
+        assertEquals("DAO row order must not matter", base,
+            ReminderAlarmScheduler.armingFingerprint(rows.reversed(), 7.0, date))
+
+        val mutations = listOf(
+            "row added" to (rows + ReminderEntity(id = 3, title = "Dhuha", timeHour = 6, timeMinute = 30)),
+            "row removed" to rows.drop(1),
+            "trigger hour" to rows.mapIndexed { i, r -> if (i == 0) r.copy(timeHour = 16) else r },
+            "trigger minute" to rows.mapIndexed { i, r -> if (i == 0) r.copy(timeMinute = 45) else r },
+            "recurrence" to rows.mapIndexed { i, r -> if (i == 0) r.copy(daysOfWeek = DaysOfWeek.EVERYDAY) else r },
+            "enabled flag" to rows.mapIndexed { i, r -> if (i == 0) r.copy(isEnabled = false) else r },
+            "max vibration extra" to rows.mapIndexed { i, r -> if (i == 0) r.copy(isMaxVibration = false) else r },
+            "title extra" to rows.mapIndexed { i, r -> if (i == 0) r.copy(title = "Al-Kahfi (Jumat)") else r },
+            "description extra" to rows.mapIndexed { i, r -> if (i == 0) r.copy(description = "Segera") else r }
+        )
+        for ((label, changed) in mutations) {
+            assertNotEquals("changed [$label] must change the reminder fingerprint",
+                base, ReminderAlarmScheduler.armingFingerprint(changed, 7.0, date))
+        }
+
+        assertNotEquals("city offset change must change the fingerprint",
+            base, ReminderAlarmScheduler.armingFingerprint(rows, 8.0, date))
+        assertNotEquals("city-frame day change must change the fingerprint",
+            base, ReminderAlarmScheduler.armingFingerprint(rows, 7.0, date.plusDays(1)))
+
+        val identical = ReminderAlarmScheduler.armingFingerprint(rows, 7.0, date)
+        assertTrue("unchanged reminder fingerprint must engage the skip",
+            AlarmScheduler.shouldSkipArm(identical, identical))
+        assertFalse("no persisted reminder fingerprint must never skip",
+            AlarmScheduler.shouldSkipArm(null, identical))
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Reminder titles/descriptions are free user text and the fingerprint folds rows with
+     * ':' and ';' — two DIFFERENT rows whose fields split differently across those
+     * separators ("a:b"+"c" vs "a"+"b:c") used to fold identically, which could let the
+     * cold-start skip mask a fleet armed with stale notification extras. The length
+     * prefix (AlarmScheduler.fingerprintField) must keep them apart — same for a city
+     * name containing the prayer fingerprint's '|' separator.
+     */
+    @Test
+    fun testFingerprintFreeTextSeparatorCharactersCannotCollide() {
+        val tz = 7.0
+        val day = LocalDate.of(2026, 8, 29)
+
+        val left = listOf(
+            ReminderEntity(
+                id = 1,
+                title = "a:b",
+                description = "c",
+                timeHour = 6,
+                timeMinute = 0,
+                daysOfWeek = DaysOfWeek("*")
+            )
+        )
+        val right = listOf(
+            ReminderEntity(
+                id = 1,
+                title = "a",
+                description = "b:c",
+                timeHour = 6,
+                timeMinute = 0,
+                daysOfWeek = DaysOfWeek("*")
+            )
+        )
+        assertNotEquals(
+            ReminderAlarmScheduler.armingFingerprint(left, tz, day),
+            ReminderAlarmScheduler.armingFingerprint(right, tz, day)
+        )
+
+        val cityLeft = baselineArmSnapshot().city
+        val cityRight = cityLeft.copy(name = cityLeft.name + "|7.0")
+        assertNotEquals(
+            AlarmScheduler.armingFingerprint(cityLeft, CalculationMethod.KEMENAG_RI, AsrJuristic.STANDARD, 2, emptyMap(), true, 10, day),
+            AlarmScheduler.armingFingerprint(cityRight, CalculationMethod.KEMENAG_RI, AsrJuristic.STANDARD, 2, emptyMap(), true, 10, day)
+        )
+    }
 
     private fun fixedTimes(): PrayerTimes = PrayerTimes(
         date = LocalDate.of(2026, 8, 29),
@@ -566,5 +823,96 @@ class AlarmPipelineHardeningTest {
         ashar = LocalTime.of(15, 16),
         maghrib = LocalTime.of(17, 55),
         isya = LocalTime.of(19, 5)
+    )
+
+    /** One arming snapshot, shaped exactly like the reads inside AlarmScheduler's lock. */
+    private data class ArmSnapshot(
+        val city: City,
+        val method: CalculationMethod,
+        val juristic: AsrJuristic,
+        val ihtiyat: Int,
+        val offsets: Map<String, Int>,
+        val preEnabled: Boolean,
+        val preMinutes: Int,
+        val now: LocalDateTime
+    )
+
+    private fun baselineArmSnapshot(
+        now: LocalDateTime = LocalDateTime.of(2026, 8, 29, 10, 0)
+    ): ArmSnapshot = ArmSnapshot(
+        city = City(
+            name = "Jakarta (DKI Jakarta)",
+            province = "DKI Jakarta",
+            country = "Indonesia",
+            latitude = -6.2088,
+            longitude = 106.8456,
+            elevation = 8.0,
+            timezone = 7.0
+        ),
+        method = CalculationMethod.KEMENAG_RI,
+        juristic = AsrJuristic.STANDARD,
+        ihtiyat = 2,
+        offsets = mapOf("SUBUH" to 0, "DZUHUR" to 0, "ASHAR" to 0, "MAGHRIB" to 0, "ISYA" to 0),
+        preEnabled = true,
+        preMinutes = 10,
+        now = now
+    )
+
+    private fun prayerFingerprint(snapshot: ArmSnapshot): String = AlarmScheduler.armingFingerprint(
+        snapshot.city,
+        snapshot.method,
+        snapshot.juristic,
+        snapshot.ihtiyat,
+        snapshot.offsets,
+        snapshot.preEnabled,
+        snapshot.preMinutes,
+        snapshot.now.toLocalDate()
+    )
+
+    /**
+     * Mirrors the arm-or-explicitly-cancel sweep the real scheduleNextPrayerAlarms performs
+     * for one snapshot — same window, same unfiltered slot set, same arm predicates —
+     * emitting one "arm:code"/"cancel:code" op per (slot, main/pre) pair. Both window days
+     * reuse [fixedTimes]: the mirror proves WHICH operations run, not the wall minutes.
+     */
+    private fun mirrorSweepOps(snapshot: ArmSnapshot): List<String> {
+        val ops = mutableListOf<String>()
+        for (date in AlarmScheduler.getSchedulingWindow(snapshot.now)) {
+            for ((type, time, _) in AlarmScheduler.allPrayerSlots(fixedTimes(), date)) {
+                val wall = LocalDateTime.of(date, time)
+                val mainCode = AlarmScheduler.getRequestCode(date, type, isPrePrayer = false)
+                ops += if (AlarmScheduler.shouldArmSlot(wall, snapshot.now, AlarmScheduler.isPrayerValid(type, fixedTimes()))) {
+                    "arm:$mainCode"
+                } else {
+                    "cancel:$mainCode"
+                }
+                val preCode = AlarmScheduler.getRequestCode(date, type, isPrePrayer = true)
+                ops += if (AlarmScheduler.shouldArmPrePrayerSlot(wall, snapshot.now, snapshot.preEnabled, snapshot.preMinutes)) {
+                    "arm:$preCode"
+                } else {
+                    "cancel:$preCode"
+                }
+            }
+        }
+        return ops
+    }
+
+    private fun reminderRows(): List<ReminderEntity> = listOf(
+        ReminderEntity(
+            id = 1,
+            title = "Al-Kahfi",
+            description = "Baca surat Al-Kahfi",
+            timeHour = 15,
+            timeMinute = 30,
+            daysOfWeek = DaysOfWeek("5"),
+            isMaxVibration = true
+        ),
+        ReminderEntity(
+            id = 2,
+            title = "Sahur",
+            timeHour = 3,
+            timeMinute = 30,
+            daysOfWeek = DaysOfWeek("1,4")
+        )
     )
 }

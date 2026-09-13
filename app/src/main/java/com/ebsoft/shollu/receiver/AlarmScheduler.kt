@@ -5,6 +5,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.ebsoft.shollu.data.model.AsrJuristic
+import com.ebsoft.shollu.data.model.CalculationMethod
+import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
 import com.ebsoft.shollu.data.preferences.SholluPreferences
@@ -39,6 +42,21 @@ object AlarmScheduler {
      * code replaces any previously armed snooze — "cancel previous snooze" semantics.
      */
     const val SNOOZE_REQUEST_CODE = 1_990_000
+
+    /**
+     * Bump when [armingFingerprint]'s composition changes, so a value persisted by an older
+     * build can never equal a freshly computed fingerprint (and silently skip an arm).
+     */
+    private const val FINGERPRINT_VERSION = "v2"
+
+    /**
+     * Length-prefixed fold of a free-text field. Fingerprint fields are joined with
+     * separator characters (':' inside a row, '|' across fields), and user-controllable
+     * text (city name, reminder title/description) may contain them — an unprefixed fold
+     * is not injective, and a collision could let the cold-start skip mask a fleet armed
+     * with different text. The length prefix makes the encoding unambiguous.
+     */
+    internal fun fingerprintField(value: String): String = "${value.length}:${value}"
 
     /**
      * Single-flight guard for [scheduleNextPrayerAlarms]. Its 6 call sites (app start, boot,
@@ -150,7 +168,84 @@ object AlarmScheduler {
         return current
     }
 
-    suspend fun scheduleNextPrayerAlarms(context: Context) = scheduleMutex.withLock {
+    /**
+     * Fingerprint of EVERY input [scheduleNextPrayerAlarms] derives alarm instants from: the
+     * selected city (the preference snapshot carries no persistent city id, so city identity
+     * is its full stored tuple — name/lat/lon/elevation/timezone; lat/lon/elevation feed the
+     * solar math, the fixed offset the epoch conversion), calculation method, Asr juristic,
+     * ihtiyat, custom per-prayer offsets, pre-prayer enabled + lead, and the city-frame
+     * window-start date (the 48h window must roll after midnight). A persisted fingerprint
+     * equal to the computed one means the already-armed fleet is exactly what this run would
+     * arm, so the cold-start path ([scheduleNextPrayerAlarms]'s skipIfUnchanged) can skip the
+     * sweep — zero AlarmManager IPCs, zero solar math. Settings that move no instant (theme,
+     * hijri, iqomah, …) are deliberately absent.
+     */
+    fun armingFingerprint(
+        city: City,
+        method: CalculationMethod,
+        juristic: AsrJuristic,
+        ihtiyatMinutes: Int,
+        offsets: Map<String, Int>,
+        prePrayerEnabled: Boolean,
+        prePrayerMinutes: Int,
+        windowStart: LocalDate
+    ): String = listOf(
+        FINGERPRINT_VERSION,
+        fingerprintField(city.name),
+        city.latitude.toString(),
+        city.longitude.toString(),
+        city.elevation.toString(),
+        city.timezone.toString(),
+        method.name,
+        juristic.name,
+        ihtiyatMinutes.toString(),
+        // Key-sorted: the value must not depend on the map's iteration order.
+        offsets.keys.sorted().joinToString(",") { "${it}=${offsets[it]}" },
+        prePrayerEnabled.toString(),
+        prePrayerMinutes.toString(),
+        windowStart.toEpochDay().toString()
+    ).joinToString("|")
+
+    /**
+     * Pure cold-start skip decision: skip ONLY on an exact match against a fingerprint a
+     * PREVIOUS COMPLETED arm pass persisted. A null persisted value (fresh install, first run
+     * after the key was introduced, recreated DataStore) never skips — the first arm must run.
+     */
+    fun shouldSkipArm(persistedFingerprint: String?, computedFingerprint: String): Boolean =
+        persistedFingerprint != null && persistedFingerprint == computedFingerprint
+
+    /**
+     * AlarmManager-state probe for the cold-start skip: the fingerprint models only the
+     * DataStore inputs, but Android cancels ALL of an app's PendingIntents on force-stop
+     * (and some OEM battery managers hibernate the same way) without touching DataStore —
+     * a pure fingerprint match would then skip the re-arm and leave the day's alarms dead
+     * until the city-midnight rollover. Tomorrow's Maghrib main code is the sentinel:
+     * Maghrib is always polar-valid and tomorrow's slots are always future in the city
+     * frame, so every completed sweep arms it. NO_CREATE never creates; a null return
+     * means the fleet is gone and the caller must fall through to the full sweep.
+     */
+    internal fun fleetIsArmed(context: Context, tomorrow: LocalDate): Boolean {
+        val probe = Intent(context, PrayerAlarmReceiver::class.java).apply {
+            action = ACTION_PRAYER_ALARM
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            getRequestCode(tomorrow, PrayerType.MAGHRIB, isPrePrayer = false),
+            probe,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        ) != null
+    }
+
+    /**
+     * Arm-or-explicitly-cancel the 48h prayer fleet. [skipIfUnchanged] is set ONLY by the
+     * SholluApplication boot block: with every arming input unchanged since the last
+     * completed pass (see [armingFingerprint]) the whole sweep is skipped — a widget tick
+     * cold-starts the process up to 48x/day and must not re-arm a fleet that is already
+     * exactly right. Every other call site (boot receiver, settings toggles, post-fire
+     * re-arm, city/GPS change) keeps the unconditional sweep — those paths are rare, and they
+     * are exactly where a stale fleet must be re-swept.
+     */
+    suspend fun scheduleNextPrayerAlarms(context: Context, skipIfUnchanged: Boolean = false) = scheduleMutex.withLock {
         val preferences = SholluPreferences(context)
         val prayerRepository: IPrayerRepository = PrayerRepository(preferences)
 
@@ -163,6 +258,7 @@ object AlarmScheduler {
         val offsets = preferences.customOffsets.first()
         val isPreWarningEnabled = preferences.isPrePrayerAlertEnabled.first()
         val preWarningMinutes = preferences.prePrayerMinutes.first()
+        val persistedFingerprint = preferences.alarmArmFingerprint.first()
 
         // "Now" in the CITY's frame of reference: prayer times are city wall times, so both the
         // past/future filter and the epoch conversion must use the city's fixed offset — never
@@ -170,6 +266,18 @@ object AlarmScheduler {
         val now = AlarmTime.cityWallClockNow(timezoneHours = city.timezone)
         val today = now.toLocalDate()
         val tomorrow = today.plusDays(1)
+
+        // Cold-start churn guard: bail BEFORE the solar calculations and any AlarmManager IPC.
+        // The fingerprint is derived from the snapshot read above — nothing outside the lock —
+        // and the fleet probe proves the alarms still EXIST (force-stop wipes PendingIntents
+        // with the inputs unchanged; see [fleetIsArmed]).
+        val fingerprint = armingFingerprint(
+            city, method, juristic, ihtiyat, offsets, isPreWarningEnabled, preWarningMinutes, today
+        )
+        if (skipIfUnchanged &&
+            shouldSkipArm(persistedFingerprint, fingerprint) &&
+            fleetIsArmed(context, tomorrow)
+        ) return@withLock
 
         val todayTimes = prayerRepository.calculateForDate(today, city, method, juristic, ihtiyat, offsets)
         val tomorrowTimes = prayerRepository.calculateForDate(tomorrow, city, method, juristic, ihtiyat, offsets)
@@ -240,6 +348,13 @@ object AlarmScheduler {
             } else {
                 cancelPendingAlarm(alarmManager, context, preRequestCode, ACTION_PRE_PRAYER_ALARM)
             }
+        }
+
+        // Persist only AFTER a completed sweep — the early returns above (fingerprint skip,
+        // null AlarmManager) and a mid-sweep crash must leave the previous value, or the next
+        // cold start would skip on an "armed" marker for alarms that were never armed.
+        if (persistedFingerprint != fingerprint) {
+            preferences.setAlarmArmFingerprint(fingerprint)
         }
     }
 
