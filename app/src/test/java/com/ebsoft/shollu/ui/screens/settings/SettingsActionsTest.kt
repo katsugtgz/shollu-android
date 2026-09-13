@@ -2,6 +2,7 @@ package com.ebsoft.shollu.ui.screens.settings
 
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.test.runTest
@@ -51,6 +52,9 @@ class SettingsActionsTest {
          */
         var rescheduleHook: suspend () -> Unit = {}
 
+        /** Same idea for refreshWidgets (widget re-render I/O). */
+        var widgetHook: suspend () -> Unit = {}
+
         val prefs = FakePrefs()
         val actions = SettingsActions(
             mutations = object : SettingsMutations {
@@ -98,7 +102,10 @@ class SettingsActionsTest {
                 rescheduleHook()
                 recorder.reschedule()
             },
-            refreshWidgets = { recorder.widget() },
+            refreshWidgets = {
+                widgetHook()
+                recorder.widget()
+            },
             startOngoingService = { enabled -> recorder.service("ongoing=$enabled") },
             startVibrationTest = { recorder.service("vibrationTest") },
             setDropzoneRunning = { start -> recorder.service("dropzone=$start") },
@@ -209,6 +216,34 @@ class SettingsActionsTest {
                 "write:ihtiyat=3", "reschedule", "widget"
             ),
             sharedRecorder.events
+        )
+    }
+
+    @Test
+    fun testUnrelatedControlsRunOnSeparateLanesWhileAWidgetRefreshStalls() = runTest {
+        // Regression (cubic PR-28 round): the first cut serialized EVERY control behind one
+        // shared lock — a slow THEME widget refresh would then delay an ONGOING toggle's
+        // startOngoingService dispatch (the only kill path for the foreground notification).
+        // Lanes are per control: ONGOING must complete while THEME is suspended mid-widget.
+        val h = Harness()
+        val themeStalled = CompletableDeferred<Unit>()
+        val releaseTheme = CompletableDeferred<Unit>()
+        h.widgetHook = {
+            themeStalled.complete(Unit)
+            releaseTheme.await()
+        }
+        val theme = launch { h.actions.setThemeMode(ThemeMode.AMOLED) }
+        themeStalled.await() // THEME now holds its lane, suspended in refreshWidgets
+        h.actions.setOngoingNotification(false) // must NOT queue behind the stalled THEME lane
+        assertEquals(
+            listOf("write:theme=AMOLED", "write:ongoing=false", "service:ongoing=false"),
+            h.recorder.events
+        )
+        releaseTheme.complete(Unit)
+        theme.join()
+        assertEquals(
+            listOf("write:theme=AMOLED", "write:ongoing=false", "service:ongoing=false", "widget"),
+            h.recorder.events
         )
     }
 

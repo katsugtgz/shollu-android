@@ -114,7 +114,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 - Release signing: local `app/release.keystore` + `app/signing.properties` (gitignored); same key is in GitHub Secrets (`KEYSTORE_BASE64` + 3) so CI tag releases sign identically.
 - `androidTestImplementation` deps + `testInstrumentationRunner` are declared but no androidTest source set exists (dead config). UI layer has zero test coverage (by design of JVM-only suite).
 - Codegraph: `.mcp.json` declares the server but `.codegraph/` has no index — run `codegraph init` to enable.
-- Themes: Navy/AMOLED only partially recolor (~30 hardcoded emerald/gold usages bypass scheme roles).
+- Themes: Compose screens/components draw exclusively from scheme roles; hex literals live only in `ui/theme/Color.kt`/`BrandColors.kt` and the intentionally-kept `widget/WidgetTheme.kt`.
 - "WIB" is hardcoded in share text/scheduler/alarm screens despite City carrying a real timezone.
 - No detekt/ktlint/.editorconfig; zero TODO/FIXME markers in source.
 - Dependabot's static analysis does NOT apply Gradle force pins — build-classpath alerts for netty/grpc/httpclient/commons are false positives against the gate-enforced resolved classpath.
