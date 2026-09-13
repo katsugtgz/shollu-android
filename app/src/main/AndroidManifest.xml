@@ -41,7 +41,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Fullscreen Prayer Alarm Alert Activity -->
+        <!-- Fullscreen Prayer Alarm Alert Activity.
+             noHistory: system-level backstop — the alert screen can never survive
+             going background, so it can never re-render on a later screen wake. -->
         <activity
             android:name=".ui.alarm.FullscreenAlarmActivity"
             android:exported="false"
@@ -50,6 +52,7 @@
             android:showWhenLocked="true"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
+            android:noHistory="true"
             android:theme="@style/Theme.Shollu.FullscreenAlarm" />
 
         <!-- Receivers -->

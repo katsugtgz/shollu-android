@@ -304,6 +304,10 @@ class LifecycleAdversarialTest {
     fun testVibrationAlarmServiceConstantsAndSafety() {
         assertEquals("com.ebsoft.shollu.ACTION_START_VIBRATION", VibrationAlarmService.ACTION_START_VIBRATION)
         assertEquals("com.ebsoft.shollu.ACTION_STOP_VIBRATION", VibrationAlarmService.ACTION_STOP_VIBRATION)
+        // Alert-ended finish poke: pinned separately from the service-directed actions so
+        // the activity's NOT_EXPORTED receiver filter can never start matching a service
+        // intent (sendBroadcast with no component needs its own action string).
+        assertEquals("com.ebsoft.shollu.ACTION_ALERT_ENDED", VibrationAlarmService.ACTION_ALERT_ENDED)
         assertEquals("extra_prayer_name", VibrationAlarmService.EXTRA_PRAYER_NAME)
         assertEquals("extra_prayer_time", VibrationAlarmService.EXTRA_PRAYER_TIME)
         assertEquals("extra_is_pre_prayer", VibrationAlarmService.EXTRA_IS_PRE_PRAYER)

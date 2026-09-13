@@ -25,6 +25,15 @@ class VibrationAlarmService : Service() {
     companion object {
         const val ACTION_START_VIBRATION = "com.ebsoft.shollu.ACTION_START_VIBRATION"
         const val ACTION_STOP_VIBRATION = "com.ebsoft.shollu.ACTION_STOP_VIBRATION"
+
+        /**
+         * In-app finish poke for the fullscreen alert: broadcast from every stop path
+         * so the showWhenLocked activity can never outlive the alert (stranded as
+         * top-of-stack, it re-rendered on every screen wake). Package-qualified and
+         * delivered to a NOT_EXPORTED receiver — delivery to a process with no live
+         * activity (pre-prayer and reminder nudges never launch one) is a no-op.
+         */
+        const val ACTION_ALERT_ENDED = "com.ebsoft.shollu.ACTION_ALERT_ENDED"
         const val EXTRA_PRAYER_NAME = "extra_prayer_name"
         const val EXTRA_PRAYER_TIME = "extra_prayer_time"
         const val EXTRA_TIMEZONE_LABEL = "extra_timezone_label"
@@ -312,6 +321,16 @@ class VibrationAlarmService : Service() {
         } finally {
             try {
                 stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            // Finish any fullscreen alert BEFORE tearing the service down: the
+            // notification stop action and both auto-stop timers end the vibration but
+            // never touched the activity, which then strands as top-of-stack. Plain
+            // sendBroadcast (no PendingIntent), package-qualified so the activity's
+            // NOT_EXPORTED receiver accepts it; no registered receiver = no-op.
+            try {
+                sendBroadcast(Intent(ACTION_ALERT_ENDED).setPackage(packageName))
             } catch (e: Exception) {
                 e.printStackTrace()
             }

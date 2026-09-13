@@ -1,8 +1,10 @@
 package com.ebsoft.shollu.ui.alarm
 
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.ebsoft.shollu.data.model.ThemeMode
 import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.AlarmScheduler
@@ -38,23 +41,57 @@ import kotlinx.coroutines.runBlocking
 
 class FullscreenAlarmActivity : ComponentActivity() {
 
+    /**
+     * Intent-derived labels, hoisted into Compose state: the manifest declares singleTask,
+     * so a re-fire while an instance is still alive (e.g. the snooze re-alert, back-to-back
+     * prayers) delivers [onNewIntent] without onCreate. A val captured by setContent would
+     * keep rendering the FIRST intent's prayer name/time; state recomposes on overwrite.
+     */
+    private data class AlertContent(
+        val prayerName: String,
+        val prayerTime: String,
+        val timezoneLabel: String?
+    )
+
+    private var alertContent by mutableStateOf(
+        AlertContent(prayerName = "Sholat", prayerTime = "", timezoneLabel = null)
+    )
+
+    /**
+     * Finish poke from the service. Every stop path (notification stop action, 45s
+     * prayer / ~2.75s nudge auto-stop timers, onDestroy teardown) broadcasts
+     * [VibrationAlarmService.ACTION_ALERT_ENDED] — without this, those paths clean
+     * the SERVICE but strand THIS showWhenLocked activity as top-of-stack, where it
+     * re-rendered on every screen wake until one of its own buttons was pressed.
+     */
+    private val alertEndedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == VibrationAlarmService.ACTION_ALERT_ENDED) {
+                finishForAlertEnded()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Registered in onCreate/unregistered in onDestroy — NOT onStart/onStop: the
+        // strand case is exactly a STOPPED-but-alive activity that must still hear the
+        // finish poke. NOT_EXPORTED because targetSdk 36 requires an export flag and
+        // no other app may finish our alert; the service qualifies its broadcast with
+        // this package so delivery stays in-app.
+        ContextCompat.registerReceiver(
+            this,
+            alertEndedReceiver,
+            IntentFilter(VibrationAlarmService.ACTION_ALERT_ENDED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         // The alarm backdrop is an always-dark gradient (Color.Black → primary) regardless of
         // ThemeMode, so the system-bar icons must be LIGHT even when the resolved scheme is
         // light. SholluTheme's systemBarsBackgroundDark param pins that without fighting the
         // theme's own icon-appearance SideEffect.
         turnScreenOnAndShowWhenLocked()
-
-        val prayerName = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_NAME) ?: "Sholat"
-        val prayerTime = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_TIME) ?: ""
-        // Zone label of the city that ARMED this alarm (WIB/WITA/WIT/UTC±), fixed at arm time
-        // alongside prayerTime. Read synchronously from the intent — the CURRENT preference is
-        // wrong here: it can have changed after arming (and an async first read would briefly
-        // drop the label anyway). AlarmScheduler stamps it via AlarmTime.timezoneLabel(city
-        // .timezone), so the line is always the CITY offset, never a hardcoded WIB.
-        val timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
+        alertContent = readAlertContent(intent)
         // Saved ThemeMode (issue #20): the alarm must match the app's theme the user picked,
         // not a hardcoded default. Read synchronously — a collect-with-default would flash the
         // Emerald scheme over the lockscreen before the saved mode lands. The block is bounded
@@ -75,9 +112,9 @@ class FullscreenAlarmActivity : ComponentActivity() {
                 systemBarsBackgroundDark = true
             ) {
                 FullscreenAlarmScreen(
-                    prayerName = prayerName,
-                    prayerTime = prayerTime,
-                    timezoneLabel = timezoneLabel,
+                    prayerName = alertContent.prayerName,
+                    prayerTime = alertContent.prayerTime,
+                    timezoneLabel = alertContent.timezoneLabel,
                     onStopVibration = {
                         stopVibration()
                         finish()
@@ -94,6 +131,29 @@ class FullscreenAlarmActivity : ComponentActivity() {
         }
     }
 
+    // singleTask (manifest): a re-fire while an instance is still alive skips onCreate
+    // and would otherwise launch dark AND keep the first intent's labels — re-arm the
+    // wake flags and refresh the alert content on reuse.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        turnScreenOnAndShowWhenLocked()
+        alertContent = readAlertContent(intent)
+    }
+
+    /**
+     * Labels straight from the arming intent. The zone label is the one of the city that
+     * ARMED this alarm (WIB/WITA/WIT/UTC±), fixed at arm time alongside prayerTime — the
+     * CURRENT preference is wrong here: it can have changed after arming. AlarmScheduler
+     * stamps it via AlarmTime.timezoneLabel(city.timezone), so the line is always the
+     * CITY offset, never a hardcoded WIB.
+     */
+    private fun readAlertContent(intent: Intent): AlertContent = AlertContent(
+        prayerName = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_NAME) ?: "Sholat",
+        prayerTime = intent.getStringExtra(VibrationAlarmService.EXTRA_PRAYER_TIME) ?: "",
+        timezoneLabel = intent.getStringExtra(VibrationAlarmService.EXTRA_TIMEZONE_LABEL)
+    )
+
     private fun turnScreenOnAndShowWhenLocked() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -101,14 +161,43 @@ class FullscreenAlarmActivity : ComponentActivity() {
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
             keyguardManager.requestDismissKeyguard(this, null)
         } else {
+            // FLAG_KEEP_SCREEN_ON deliberately omitted: nothing ever cleared it, so on
+            // this legacy path it kept the display forced-on for a stranded activity.
+            // The service's 60s-capped partial wakelock already covers the screen-off
+            // alert window.
             @Suppress("DEPRECATION")
             window.addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                         WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
+    }
+
+    /**
+     * The alert is over wherever it was stopped from. Drop the legacy wake flags (the
+     * pre-O_MR1 branch pinned them straight onto the window) so a finishing window
+     * cannot keep pulling the screen up, then finish. finish() is idempotent, so the
+     * in-activity stop/snooze buttons — which route through the service and finish on
+     * their own — remain correct when this lands after them.
+     */
+    private fun finishForAlertEnded() {
+        @Suppress("DEPRECATION")
+        window.clearFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        )
+        finish()
+    }
+
+    override fun onDestroy() {
+        try {
+            unregisterReceiver(alertEndedReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        super.onDestroy()
     }
 
     private fun stopVibration() {
