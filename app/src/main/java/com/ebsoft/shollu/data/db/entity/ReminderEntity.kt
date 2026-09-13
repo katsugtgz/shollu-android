@@ -77,8 +77,15 @@ data class ReminderEntity(
     val reminderType: ReminderType = ReminderType.CUSTOM,
     val daysOfWeek: DaysOfWeek = DaysOfWeek.EVERYDAY,
     val isEnabled: Boolean = true,
-    // Nudge (short burst) instead of the 45s adzan-length loop — reminders used to
-    // default to the full alarm treatment, which tripled the daily vibration load.
+    // Nudge intensity, not an on/off switch: false = gentle burst, true = the max
+    // pattern. Deliberately single-flag — the v2 channels carry no channel-level buzz,
+    // so VibrationAlarmService's waveform is the only haptic a reminder gets, and
+    // gating it on this flag would silence reminders entirely (the receiver therefore
+    // always starts the nudge). Default flipped true→false because the old full-alarm
+    // default tripled the daily vibration load; the flip only affects NEW rows — Room
+    // persists per-row values, and rows from before keep `true`, which now just means
+    // the stronger nudge. No migration: a constructor default is not part of the SQL
+    // schema, and the real load fix (45s loop → short nudge) lives receiver-side.
     val isMaxVibration: Boolean = false,
     val isPreWarningEnabled: Boolean = false,
     val preWarningMinutes: Int = 10

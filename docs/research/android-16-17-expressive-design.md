@@ -8,13 +8,13 @@
 
 Shollu should target **Compose Material 3 Expressive** (`androidx.compose.material3`), not Pixel SystemUI and not a mythical “Android 17 design language.” Official Compose docs: M3 Expressive is an expansion of Material 3 that “complements the Android 16 visual style and system UI.” Android 17 (API 37) adds platform UX (Live Update semantic color, MetricStyle notifications, mandatory large-screen adaptivity when *targeting* 37). It does **not** ship a successor in-app chrome catalog.
 
-The in-scope Expressive pass is already on `main` (`e4b1bed`, PRs #21–#24). Theme root is `MaterialExpressiveTheme` + `MotionScheme` + `SholluShapes`. Phone `NavigationBar` is **intentionally frozen** (open parent #12). Remaining work is follow-up, not a re-do of #12: optional pin bump past `1.5.0-alpha24`, dropzone View hex, leftover type/hex holes, then #12’s own out-of-scope list (toolbars, rails, FAB menu, SplitButton, adaptive).
+The in-scope Expressive pass is already on `main` (`e4b1bed`, PRs #21–#24; follow-up #25 later resolved the dropzone View hex, `Theme.kt` AMOLED tokens, and nav-label/alarm type roles — see the `**Resolved by #25**` notes below). Theme root is `MaterialExpressiveTheme` + `MotionScheme` + `SholluShapes`. Phone `NavigationBar` is **intentionally frozen** (open parent #12). Remaining work is follow-up, not a re-do of #12: optional pin bump past `1.5.0-alpha24`, the emerald/gold hex purge still present in Compose screens, then #12’s own out-of-scope list (toolbars, rails, FAB menu, SplitButton, adaptive).
 
 Do **not** replace the five-tab phone bar. That contradicts #12 and the skill itself (“Phone: `NavigationBar` is still valid”).
 
 ## Upstream status (this repo)
 
-Checked 2026-08-31. `HEAD` = `e4b1bed1130eaec2fb4ff8f35c41ea06f8c8337d`. Working tree on branch `new-uiux-a16-17` at that commit.
+Checked 2026-08-31. `HEAD` = `e4b1bed1130eaec2fb4ff8f35c41ea06f8c8337d`. Working tree on branch `new-uiux-a16-17` at that commit. Pre-#25 snapshot: this table predates PR #25 — the `**Resolved by #25**` / `**done in #25**` notes in Theming, Type, and the backlog below describe changes that landed after it was taken.
 
 | Item | Value |
 |---|---|

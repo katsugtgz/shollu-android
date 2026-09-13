@@ -2,6 +2,8 @@ package com.ebsoft.shollu.ui.screens.settings
 
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Narrow write seam over [com.ebsoft.shollu.data.preferences.SholluPreferences]: exactly the
@@ -45,6 +47,11 @@ interface SettingsMutations {
  *  - Tes getar         -> no  / no  / no  / start VibrationAlarmService test
  *  - Floating dropzone -> no  / no  / no  / overlay-permission gate, then start/stop service
  *
+ * Every sequence that pairs a write with downstream effects runs under ONE shared
+ * [effectSequenceMutex] (see below) — the matrix decides WHICH effects fire, the lock only
+ * keeps each tap's write -> effect chain contiguous against rapid taps. Write-only rows
+ * (Hijri adjustment, max vibration) stay unlocked: DataStore already serializes their edits.
+ *
  * The City row is intentionally absent: it only opens the location picker — the city write +
  * reschedule + widget refresh happen in the picker/GPS flow (MainActivity, issue #19).
  */
@@ -59,8 +66,20 @@ class SettingsActions(
     private val requestOverlayPermission: () -> Unit,
 ) {
 
-    /** Metode Hisab: write -> reschedule -> refresh widget. */
-    suspend fun setCalculationMethod(method: CalculationMethod) {
+    companion object {
+        /**
+         * One lock per mutating SEQUENCE (write -> reschedule -> widget / service dispatch),
+         * shared by every control that has downstream effects. DataStore serializes the
+         * WRITES, but the follow-up effects are independent suspend calls: two rapid taps on
+         * two coroutines could interleave them and let an OLDER widget render land after the
+         * newest write. Companion-level on purpose — an Activity recreation mints a fresh
+         * [SettingsActions], and the sequences must still serialize across instances.
+         */
+        private val effectSequenceMutex = Mutex()
+    }
+
+    /** Metode Hisab: write -> reschedule -> refresh widget, serialized end-to-end. */
+    suspend fun setCalculationMethod(method: CalculationMethod) = effectSequenceMutex.withLock {
         mutations.updateCalculationMethod(method)
         rescheduleAlarms()
         refreshWidgets()
@@ -70,9 +89,11 @@ class SettingsActions(
      * Ihtiyat stepper (clamped 0..10 in the DataStore edit): write -> reschedule -> refresh
      * widget. The delta is applied ATOMICALLY to the persisted value inside a single DataStore
      * edit transform — serialized by DataStore itself — so rapid taps and recreated-Activity
-     * action instances can never lose an increment.
+     * action instances can never lose an increment. The edit only serializes the WRITE: the
+     * follow-up reschedule + widget of two rapid taps could still interleave, so the whole
+     * sequence holds [effectSequenceMutex] and the newest write also owns the last render.
      */
-    suspend fun changeIhtiyat(delta: Int) {
+    suspend fun changeIhtiyat(delta: Int) = effectSequenceMutex.withLock {
         mutations.adjustIhtiyatMinutes(delta)
         rescheduleAlarms()
         refreshWidgets()
@@ -83,8 +104,8 @@ class SettingsActions(
         mutations.adjustHijriAdjustment(delta)
     }
 
-    /** Pre-prayer alert toggle: write -> reschedule. No widget refresh. */
-    suspend fun setPrePrayerAlert(enabled: Boolean, minutes: Int) {
+    /** Pre-prayer alert toggle: write -> reschedule, serialized end-to-end. No widget refresh. */
+    suspend fun setPrePrayerAlert(enabled: Boolean, minutes: Int) = effectSequenceMutex.withLock {
         mutations.setPrePrayerAlert(enabled, minutes)
         rescheduleAlarms()
     }
@@ -94,8 +115,11 @@ class SettingsActions(
         mutations.setMaxVibrationEnabled(enabled)
     }
 
-    /** ThemeMode: write -> refresh widget (tile colors follow the mode). No reschedule. */
-    suspend fun setThemeMode(mode: ThemeMode) {
+    /**
+     * ThemeMode: write -> refresh widget (tile colors follow the mode), serialized end-to-end
+     * so an older palette cannot land after the newest mode. No reschedule.
+     */
+    suspend fun setThemeMode(mode: ThemeMode) = effectSequenceMutex.withLock {
         mutations.setThemeMode(mode)
         refreshWidgets()
     }
@@ -104,9 +128,10 @@ class SettingsActions(
      * Ongoing notification toggle: write FIRST, then start/stop the service — the service
      * reads the preference when it comes up, so ordering matters. The service dispatch runs in
      * [finally]: it is the ONLY kill path for the unswipeable foreground notification, so a
-     * failed/stalled write must never silently skip it.
+     * failed/stalled write must never silently skip it. Serialized end-to-end so two rapid
+     * toggles cannot dispatch a service start that lands after the newest write.
      */
-    suspend fun setOngoingNotification(enabled: Boolean) {
+    suspend fun setOngoingNotification(enabled: Boolean) = effectSequenceMutex.withLock {
         try {
             mutations.setOngoingNotificationEnabled(enabled)
         } finally {

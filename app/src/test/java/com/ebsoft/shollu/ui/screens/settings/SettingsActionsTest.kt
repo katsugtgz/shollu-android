@@ -2,7 +2,10 @@ package com.ebsoft.shollu.ui.screens.settings
 
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -38,11 +41,16 @@ class SettingsActionsTest {
         var ongoingEnabled: Boolean? = null
     }
 
-    private class Harness {
+    private class Harness(val recorder: Recorder = Recorder()) {
         var overlayGranted = true
         var failNextWrite = false
 
-        val recorder = Recorder()
+        /**
+         * Suspension point injected into rescheduleAlarms so concurrent-tap tests get a real
+         * interleaving window (the real seam suspends on DataStore/AlarmManager I/O).
+         */
+        var rescheduleHook: suspend () -> Unit = {}
+
         val prefs = FakePrefs()
         val actions = SettingsActions(
             mutations = object : SettingsMutations {
@@ -86,7 +94,10 @@ class SettingsActionsTest {
                     recorder.write("ongoing=$enabled")
                 }
             },
-            rescheduleAlarms = { recorder.reschedule() },
+            rescheduleAlarms = {
+                rescheduleHook()
+                recorder.reschedule()
+            },
             refreshWidgets = { recorder.widget() },
             startOngoingService = { enabled -> recorder.service("ongoing=$enabled") },
             startVibrationTest = { recorder.service("vibrationTest") },
@@ -146,6 +157,58 @@ class SettingsActionsTest {
         assertEquals(
             listOf("write:ihtiyat=4", "reschedule", "widget", "write:ihtiyat=3", "reschedule", "widget"),
             h.recorder.events
+        )
+    }
+
+    @Test
+    fun testRapidIhtiyatTapsSerializeTheWholeWriteRescheduleWidgetSequence() = runTest {
+        // Regression (bot review round): DataStore serializes the WRITE, but two rapid taps'
+        // follow-up effects could interleave (write, write, reschedule, reschedule, widget,
+        // widget) and let the OLDER widget render land after the newest write. One sequence
+        // lock must keep each tap's write -> reschedule -> widget contiguous even when the
+        // reschedule suspends mid-sequence.
+        val h = Harness()
+        h.prefs.ihtiyatMinutes = 5
+        h.rescheduleHook = { yield() } // interleaving window the real seam also has
+        val taps = listOf(
+            launch { h.actions.changeIhtiyat(delta = +1) },
+            launch { h.actions.changeIhtiyat(delta = +1) }
+        )
+        taps.joinAll()
+        assertEquals(7, h.prefs.ihtiyatMinutes)
+        assertEquals(
+            listOf(
+                "write:ihtiyat=6", "reschedule", "widget",
+                "write:ihtiyat=7", "reschedule", "widget"
+            ),
+            h.recorder.events
+        )
+    }
+
+    @Test
+    fun testSequenceLockIsSharedAcrossSettingsActionsInstances() = runTest {
+        // Regression (bot review round): an Activity recreation mints a new SettingsActions —
+        // the sequence lock must live at companion level so taps racing across the old and the
+        // new instance still serialize instead of interleaving their widget renders.
+        val sharedRecorder = Recorder()
+        val old = Harness(sharedRecorder)
+        val recreated = Harness(sharedRecorder)
+        old.rescheduleHook = { yield() }
+        recreated.rescheduleHook = { yield() }
+        val taps = listOf(
+            launch { old.actions.changeIhtiyat(delta = +1) },
+            launch { recreated.actions.changeIhtiyat(delta = +1) }
+        )
+        taps.joinAll()
+        // Both instances compute 2 -> 3; the assertion is that neither sequence interleaves
+        // its reschedule/widget into the other's write (an instance-level lock would emit
+        // write, write, reschedule, reschedule, widget, widget).
+        assertEquals(
+            listOf(
+                "write:ihtiyat=3", "reschedule", "widget",
+                "write:ihtiyat=3", "reschedule", "widget"
+            ),
+            sharedRecorder.events
         )
     }
 

@@ -36,6 +36,8 @@ import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.ui.theme.SholluTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -74,6 +76,18 @@ class FullscreenAlarmActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Saved ThemeMode (issue #20) read kicked off FIRST — the warm-cache claim does
+        // NOT hold on a cold alarm start: the Application boot chain reads this DataStore
+        // on Dispatchers.IO BEHIND a Room open (cities → presets), and the main thread
+        // (receiver → this onCreate) usually wins that race, so .first() can be the cold
+        // file read. Starting it up front lets DataStore's own IO actor run the read
+        // concurrently with the receiver registration and wake flags below; the theme is
+        // still final before the first frame (a collect-with-default would flash Emerald
+        // over the lockscreen).
+        val app = application as SholluApplication
+        val themeModeDeferred = app.applicationScope.async(Dispatchers.IO) {
+            app.preferences.themeMode.first()
+        }
         enableEdgeToEdge()
         // Registered in onCreate/unregistered in onDestroy — NOT onStart/onStop: the
         // strand case is exactly a STOPPED-but-alive activity that must still hear the
@@ -92,15 +106,11 @@ class FullscreenAlarmActivity : ComponentActivity() {
         // theme's own icon-appearance SideEffect.
         turnScreenOnAndShowWhenLocked()
         alertContent = readAlertContent(intent)
-        // Saved ThemeMode (issue #20): the alarm must match the app's theme the user picked,
-        // not a hardcoded default. Read synchronously — a collect-with-default would flash the
-        // Emerald scheme over the lockscreen before the saved mode lands. The block is bounded
-        // in practice: this process can only be serving an alarm after Application.onCreate,
-        // whose boot chain (arm alarms → ongoing notification) has already read the same
-        // application-scoped singleton, so .first() hits the warm in-memory DataStore cache.
-        val themeMode: ThemeMode = runBlocking {
-            (application as SholluApplication).preferences.themeMode.first()
-        }
+        // Await the read started at the top of onCreate — the theme must be final before
+        // setContent's first frame. When the boot chain did warm the cache this returns
+        // immediately; on the cold path it joins the in-flight read, so the lockscreen
+        // waits only for whatever read time is LEFT, not the read plus the preamble.
+        val themeMode: ThemeMode = runBlocking { themeModeDeferred.await() }
 
         setContent {
             // Documented nested-theme exception (issues #15/#20): the ONE sanctioned nested
