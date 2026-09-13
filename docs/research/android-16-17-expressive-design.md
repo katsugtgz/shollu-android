@@ -114,7 +114,7 @@ Official Compose theme: color + type + shape, plus Expressive **motion** under `
 - Surface containers (emphasis ladder): `surfaceContainerLowest` → `Low` → (default) `surfaceContainer` → `High` → `Highest`
 - Outline: `outline`, `outlineVariant`
 
-Shollu schemes currently set `surfaceContainerLow` (and a subset of other roles). Other container rungs fall back to library defaults — fine, but Navy/AMOLED screens that still paint emerald/gold hex bypass the scheme entirely (AGENTS.md: ~30 hardcoded usages). Palettes belong in `Color.kt`. Compose screens should use roles.
+Shollu schemes currently set `surfaceContainerLow` (and a subset of other roles). Other container rungs fall back to library defaults — fine. **Resolved by #25/PR-28:** Compose screens no longer paint raw hex — palettes live in `Color.kt`/`BrandColors.kt` and screens use roles (hex remains only in the palette modules, the intentionally-kept `widget/WidgetTheme.kt`, and XML resources: `res/values*/colors.xml` and notification/widget drawables).
 
 Remaining literal hex outside the palette module (current-state after PR #25):
 
@@ -197,7 +197,7 @@ Prioritized. “Do not do” items are #12 contract, not taste.
 3. **Dropzone View hex → ThemeMode tokens** — **done in #25** (`DropzoneTheme.kt` + `brandColors`). Keep it a View; no `MaterialExpressiveTheme` in the overlay.
 4. **Type roles leftover** — **done in #25**: nav labels use `MaterialTheme.typography.labelSmall`; alarm text sizes use `titleLarge` / `headline*` / `bodyMedium` / `labelLarge`. Only `letterSpacing` keeps raw `sp` (it is a tracking value, not a font size).
 5. **AMOLED inline colors in `Theme.kt`** — **done in #25**: moved to `AmoledPrimaryContainer` / `AmoledSecondary` tokens in `Color.kt`.
-6. **Hardcoded emerald/gold in Compose screens** — AGENTS.md still notes ~30 usages that bypass scheme roles (Navy/AMOLED/Dynamic). Finish the purge #12 already started; do not treat leftover hex as "Android 17 chrome."
+6. **Hardcoded emerald/gold in Compose screens** — ~~AGENTS.md still notes ~30 usages~~ **DONE (PR-28):** zero hex literals remain in Compose screens; the stale AGENTS.md figure was corrected. Remaining hex is confined to palette modules, `WidgetTheme.kt`, and XML resources (`colors.xml`, notification/widget drawables) by design.
 7. **material3 pin bump** — dedicated issue. α24 → Maven latest (α27 as of 2026-08-26). Gate: `verifyDependencySecurity`, `test`, `assembleDebug`, Home `ButtonGroup` + SearchBar compile. Read α25–α27 breaking notes above. Re-check the 1.12.0-beta01 leak.
 
 ### Out of scope until a **new** issue (kit wants these; #12 froze them)
