@@ -254,6 +254,16 @@ jobs:
     - name: Stop Gradle daemons
       run: ./gradlew --stop
 
+    # 2-vCPU runners expose /dev/kvm but the runner user is not in the kvm group
+    # (ProbeKVM: "This user doesn't have permissions to use KVM (/dev/kvm)"), which
+    # forces the emulator into TCG software emulation — 500s+ boots, Broken pipe
+    # adbd failures, exit 224. Remedy from GitHub's 2024-04-02 changelog.
+    - name: Enable KVM group perms
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
     - name: Install test on Android 16 emulator (real update path)
       uses: reactivecircus/android-emulator-runner@v2
       with:
