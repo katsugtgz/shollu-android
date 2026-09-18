@@ -86,7 +86,12 @@ fun QiblaCompassScreen(
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_HIGH) }
-    var sensorAvailable by remember { mutableStateOf(true) }
+    // Starts false: registration is owned by the lifecycle observer below (its addObserver
+    // catch-up dispatch delivers ON_START when already STARTED), never by effect-body code.
+    var sensorAvailable by remember { mutableStateOf(false) }
+    // True only after the listener has received a sample since the last ON_START. Gates
+    // isAligned so a pre-resume azimuth cannot flash "Menghadap Ka'bah" on stale data.
+    var freshSample by remember { mutableStateOf(false) }
     val displayRotation = rememberDisplayRotation(context)
 
     val qiblaBearing = remember(selectedCity) {
@@ -124,8 +129,19 @@ fun QiblaCompassScreen(
             private var hasGravity = false
             private var hasGeomagnetic = false
 
+            /**
+             * Drops counterpart samples cached from a previous lifecycle session, so the
+             * first accelerometer (or magnetic) event after a restart cannot pair with a
+             * stale pre-stop counterpart when rebuilding the rotation matrix.
+             */
+            fun reset() {
+                hasGravity = false
+                hasGeomagnetic = false
+            }
+
             override fun onSensorChanged(event: SensorEvent?) {
                 if (event == null) return
+                freshSample = true
 
                 when (event.sensor.type) {
                     Sensor.TYPE_ROTATION_VECTOR -> {
@@ -176,9 +192,9 @@ fun QiblaCompassScreen(
             }
         }
 
-        // register/unregister helpers — the same loop serves the initial START (the effect
-        // runs while STARTED, so START semantics hold at composition time too), every
-        // subsequent START, and ON_STOP teardown.
+        // register/unregister helpers — the same loop serves the initial START (the
+        // observer's addObserver catch-up dispatch delivers ON_START synchronously when
+        // already STARTED), every subsequent START, and ON_STOP teardown.
         fun registerAll(): Boolean {
             var any = false
             for (sensor in sensors) {
@@ -195,16 +211,22 @@ fun QiblaCompassScreen(
             }
         }
 
-        sensorAvailable = registerAll()
-
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> sensorAvailable = registerAll()
+                Lifecycle.Event.ON_START -> {
+                    // Drop state cached from the previous session before re-registering:
+                    // stale counterpart samples (accel/mag pair) and the pre-stop azimuth
+                    // must not read as fresh data for the new session.
+                    listener.reset()
+                    freshSample = false
+                    sensorAvailable = registerAll()
+                }
                 Lifecycle.Event.ON_STOP -> {
                     unregisterAll()
                     // Suppress alignment confirmation while stopped: stale azimuth must not
                     // read as "Menghadap Ka'bah" when the user returns holding the phone.
                     sensorAvailable = false
+                    freshSample = false
                 }
                 else -> Unit
             }
@@ -221,7 +243,7 @@ fun QiblaCompassScreen(
     // Qibla bearing; confirmation is suppressed while no sensor is feeding azimuth updates.
     val trueAzimuth = QiblaCalculator.qiblaTrueBearingFromMagnetic(azimuth.toDouble(), declination.toDouble()).toFloat()
     val diff = (trueAzimuth - qiblaBearing + 360f) % 360f
-    val isAligned = sensorAvailable && (diff < 3f || diff > 357f)
+    val isAligned = sensorAvailable && freshSample && (diff < 3f || diff > 357f)
 
     val animatedAzimuth by animateFloatAsState(
         targetValue = -azimuth,

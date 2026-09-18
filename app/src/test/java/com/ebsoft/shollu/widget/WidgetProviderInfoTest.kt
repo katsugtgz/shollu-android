@@ -21,17 +21,40 @@ class WidgetProviderInfoTest {
 
     @Test
     fun testWidgetPeriodicUpdateDisabledEventDrivenRefreshOnly() {
-        val file = File("src/main/res/xml/shollu_app_widget_info.xml")
+        val file = resolveModuleFile("src/main/res/xml/shollu_app_widget_info.xml")
         assertTrue(
-            "Widget provider info missing at ${file.absolutePath} — widget metadata must not move",
+            "Widget provider info not found via ${file.absolutePath} (user.dir=" +
+                "${System.getProperty("user.dir")}). Test requires the app module root " +
+                "(or repo root) as working directory — widget metadata must not move.",
             file.exists()
         )
-        val xml = file.readText()
+        // Strip XML comments first: the file's own header comment mentions
+        // updatePeriodMillis, so a raw match could green-light a commented-out attribute.
+        val xml = file.readText().replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
         assertTrue(
             "updatePeriodMillis must be \"0\" (periodic tick disabled; refreshes are " +
                 "event-driven via updateSholluWidgets). A non-zero period cold-starts the " +
                 "process up to 48x/day for static content.",
             Regex("""android:updatePeriodMillis\s*=\s*"0"""").containsMatchIn(xml)
         )
+    }
+
+    /**
+     * Resolves a module-relative path without depending on Gradle's default test working
+     * directory: walks up from user.dir looking for the app module root (the dir whose
+     * `src/main/res/xml` subtree holds this file), also accepting the repo root so a
+     * root-cwd run finds `app/...`. Fails with an actionable path if neither matches.
+     */
+    private fun resolveModuleFile(relativePath: String): File {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null) {
+            val candidate = File(dir, relativePath)
+            if (candidate.exists()) return candidate
+            // Repo-root cwd: try the app module one level down.
+            val viaApp = File(dir, "app/$relativePath")
+            if (viaApp.exists()) return viaApp
+            dir = dir.parentFile
+        }
+        return File(relativePath) // nonexistent — reported by the exists() assertion
     }
 }
