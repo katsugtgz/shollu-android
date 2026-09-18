@@ -29,6 +29,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.engine.QiblaCalculator
 
@@ -47,6 +50,34 @@ private fun rememberDisplayRotation(context: Context): Int {
     }
 }
 
+/**
+ * Resolves the concrete sensors for this device via the pure [compassSourceFor] policy
+ * (see CompassSensorPolicy.kt), then maps the choice back to Sensor handles. Uncalibrated
+ * magnetic counts as magnetic; empty list means no usable compass hardware.
+ */
+private fun resolveCompassSensors(sensorManager: SensorManager): List<Sensor> {
+    val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    val accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    val magneticSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        ?: sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED)
+    @Suppress("DEPRECATION")
+    val orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
+
+    return when (
+        compassSourceFor(
+            hasRotationVector = rotationVectorSensor != null,
+            hasAccel = accelerometerSensor != null,
+            hasMagnetic = magneticSensor != null,
+            hasOrientation = orientationSensor != null
+        )
+    ) {
+        CompassSource.ROTATION_VECTOR -> listOf(rotationVectorSensor!!)
+        CompassSource.ACCEL_MAG -> listOf(accelerometerSensor!!, magneticSensor!!)
+        CompassSource.ORIENTATION -> listOf(orientationSensor!!)
+        CompassSource.NO_COMPASS -> emptyList()
+    }
+}
+
 @Composable
 fun QiblaCompassScreen(
     selectedCity: City,
@@ -55,7 +86,12 @@ fun QiblaCompassScreen(
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_HIGH) }
-    var sensorAvailable by remember { mutableStateOf(true) }
+    // Starts false: registration is owned by the lifecycle observer below (its addObserver
+    // catch-up dispatch delivers ON_START when already STARTED), never by effect-body code.
+    var sensorAvailable by remember { mutableStateOf(false) }
+    // True only after the listener has received a sample since the last ON_START. Gates
+    // isAligned so a pre-resume azimuth cannot flash "Menghadap Ka'bah" on stale data.
+    var freshSample by remember { mutableStateOf(false) }
     val displayRotation = rememberDisplayRotation(context)
 
     val qiblaBearing = remember(selectedCity) {
@@ -72,16 +108,17 @@ fun QiblaCompassScreen(
         QiblaCalculator.magneticDeclinationDegrees(selectedCity.latitude, selectedCity.longitude, nowMillis).toFloat()
     }
 
-    // Compass Sensor Listener (re-registered when the display rotation changes)
-    DisposableEffect(displayRotation) {
+    // Compass Sensor Listener. Registered on START, unregistered on STOP via a lifecycle
+    // observer — NOT composition lifetime: leaving the Qibla tab via Home keeps the
+    // composition alive (the START_STICKY ongoing service holds this process), and an
+    // unguarded registration would stream ~60Hz sensor events from the background. Same
+    // goal as the repeatOnLifecycle idiom in Tickers.kt / HomeScreen hero clock, lifted to
+    // an observer so the registration also survives without a coroutine. Re-registered on
+    // display-rotation changes so the axis remap matches the new orientation.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, displayRotation) {
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        val accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val magneticSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-            ?: sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED)
-
-        val hasRotationVector = rotationVectorSensor != null
-        val hasAccelMag = accelerometerSensor != null && magneticSensor != null
+        val sensors = resolveCompassSensors(sensorManager)
 
         val listener = object : SensorEventListener {
             private val rotationMatrix = FloatArray(9)
@@ -92,8 +129,19 @@ fun QiblaCompassScreen(
             private var hasGravity = false
             private var hasGeomagnetic = false
 
+            /**
+             * Drops counterpart samples cached from a previous lifecycle session, so the
+             * first accelerometer (or magnetic) event after a restart cannot pair with a
+             * stale pre-stop counterpart when rebuilding the rotation matrix.
+             */
+            fun reset() {
+                hasGravity = false
+                hasGeomagnetic = false
+            }
+
             override fun onSensorChanged(event: SensorEvent?) {
                 if (event == null) return
+                freshSample = true
 
                 when (event.sensor.type) {
                     Sensor.TYPE_ROTATION_VECTOR -> {
@@ -144,24 +192,50 @@ fun QiblaCompassScreen(
             }
         }
 
-        var registered = false
-        if (hasRotationVector) {
-            registered = sensorManager.registerListener(listener, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI)
-        } else if (hasAccelMag) {
-            val accelRegistered = sensorManager.registerListener(listener, accelerometerSensor, SensorManager.SENSOR_DELAY_UI)
-            val magneticRegistered = sensorManager.registerListener(listener, magneticSensor, SensorManager.SENSOR_DELAY_UI)
-            registered = accelRegistered || magneticRegistered
-        } else {
-            @Suppress("DEPRECATION")
-            val orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
-            if (orientationSensor != null) {
-                registered = sensorManager.registerListener(listener, orientationSensor, SensorManager.SENSOR_DELAY_UI)
+        // register/unregister helpers — the same loop serves the initial START (the
+        // observer's addObserver catch-up dispatch delivers ON_START synchronously when
+        // already STARTED), every subsequent START, and ON_STOP teardown.
+        fun registerAll(): Boolean {
+            var any = false
+            for (sensor in sensors) {
+                if (sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)) {
+                    any = true
+                }
+            }
+            return any
+        }
+
+        fun unregisterAll() {
+            for (sensor in sensors) {
+                sensorManager.unregisterListener(listener, sensor)
             }
         }
-        sensorAvailable = registered
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    // Drop state cached from the previous session before re-registering:
+                    // stale counterpart samples (accel/mag pair) and the pre-stop azimuth
+                    // must not read as fresh data for the new session.
+                    listener.reset()
+                    freshSample = false
+                    sensorAvailable = registerAll()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    unregisterAll()
+                    // Suppress alignment confirmation while stopped: stale azimuth must not
+                    // read as "Menghadap Ka'bah" when the user returns holding the phone.
+                    sensorAvailable = false
+                    freshSample = false
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
 
         onDispose {
-            sensorManager.unregisterListener(listener)
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            unregisterAll()
         }
     }
 
@@ -169,7 +243,7 @@ fun QiblaCompassScreen(
     // Qibla bearing; confirmation is suppressed while no sensor is feeding azimuth updates.
     val trueAzimuth = QiblaCalculator.qiblaTrueBearingFromMagnetic(azimuth.toDouble(), declination.toDouble()).toFloat()
     val diff = (trueAzimuth - qiblaBearing + 360f) % 360f
-    val isAligned = sensorAvailable && (diff < 3f || diff > 357f)
+    val isAligned = sensorAvailable && freshSample && (diff < 3f || diff > 357f)
 
     val animatedAzimuth by animateFloatAsState(
         targetValue = -azimuth,
