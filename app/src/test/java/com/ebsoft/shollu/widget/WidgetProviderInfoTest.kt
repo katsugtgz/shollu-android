@@ -41,16 +41,20 @@ class WidgetProviderInfoTest {
 
     /**
      * Resolves a module-relative path without depending on Gradle's default test working
-     * directory: walks up from user.dir looking for the app module root (the dir whose
-     * `src/main/res/xml` subtree holds this file), also accepting the repo root so a
-     * root-cwd run finds `app/...`. Fails with an actionable path if neither matches.
+     * directory: walks up from user.dir, but only ever accepts the app module's copy —
+     * a directory literally named `app` containing the path, or that directory reached
+     * as `app/...` from a repo-root cwd. A same-named file anywhere else (stray copy,
+     * other module) is rejected so the test keeps guarding the manifest-referenced
+     * `@xml/shollu_app_widget_info` location, not merely any file with that name.
      */
     private fun resolveModuleFile(relativePath: String): File {
         var dir: File? = File(System.getProperty("user.dir")).absoluteFile
         while (dir != null) {
-            val candidate = File(dir, relativePath)
-            if (candidate.exists()) return candidate
-            // Repo-root cwd: try the app module one level down.
+            if (dir.name == "app") {
+                val candidate = File(dir, relativePath)
+                if (candidate.exists()) return candidate
+            }
+            // Repo-root (or other) cwd: try the app module one level down.
             val viaApp = File(dir, "app/$relativePath")
             if (viaApp.exists()) return viaApp
             dir = dir.parentFile
