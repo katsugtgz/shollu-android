@@ -7,7 +7,8 @@ import org.junit.Test
 
 /**
  * AppUpdater is the caller-facing update seam: Quiet vs Available, 24h throttle,
- * per-tag snooze, APK-not-AAB, failed fetch stays silent. Fakes stand in for
+ * 24h per-tag snooze, APK-not-AAB, failed fetch stamps throttle and can still
+ * prompt from cache. Play-managed installs stay Quiet. Fakes stand in for
  * GitHub + DataStore; tests must not mention HTTP or PackageInstaller.
  */
 class AppUpdaterTest {
@@ -94,7 +95,7 @@ class AppUpdaterTest {
     }
 
     @Test
-    fun testFailedFetchIsSilentAndStampsThrottle() = runTest {
+    fun testFailedFetchStampsThrottleAndPromptsFromCache() = runTest {
         val now = 1_700_000_000_000L
         val existing = CachedRelease(
             tagName = "v3.16.0",
@@ -163,14 +164,56 @@ class AppUpdaterTest {
     }
 
     @Test
-    fun testAabOnlyReleaseIsQuiet() = runTest {
+    fun testAabOnlyReleaseIsQuietAndClearsStaleCachedApk() = runTest {
+        val stale = CachedRelease(
+            tagName = "v3.15.0",
+            apkUrl = apk.browserDownloadUrl,
+            apkSize = apk.size,
+            digest = apk.digest!!
+        )
+        val store = MemoryStore().apply { cached = stale }
         val updater = AppUpdater(
             fetcher = ScriptedFetcher(ReleaseFetch.Fresh("v3.16.0", listOf(aab), null)),
-            store = MemoryStore(),
+            store = store,
             installed = InstalledAppQuery { InstalledApp(31000L, "3.10.0") },
             clock = { 1_700_000_000_000L }
         )
         assertEquals(UpdateCheck.Quiet, updater.check())
+        assertEquals("AAB-only latest must drop a previously cached APK", null, store.cached)
+    }
+
+    @Test
+    fun testPlayManagedInstallStaysQuiet() = runTest {
+        val updater = AppUpdater(
+            fetcher = ScriptedFetcher(ReleaseFetch.Fresh("v3.16.0", listOf(apk), null)),
+            store = MemoryStore(),
+            installed = InstalledAppQuery {
+                InstalledApp(31000L, "3.10.0", githubApkEligible = false)
+            },
+            clock = { 1_700_000_000_000L }
+        )
+        assertEquals(UpdateCheck.Quiet, updater.check())
+    }
+
+    @Test
+    fun testSnoozeExpiresAfterTwentyFourHours() = runTest {
+        var now = 1_700_000_000_000L
+        val store = MemoryStore()
+        val updater = AppUpdater(
+            fetcher = ScriptedFetcher(ReleaseFetch.Fresh("v3.16.0", listOf(apk), "a")),
+            store = store,
+            installed = InstalledAppQuery { InstalledApp(31000L, "3.10.0") },
+            clock = { now }
+        )
+        val first = updater.check() as UpdateCheck.Available
+        updater.snooze(first.offer.tagName)
+        store.lastCheck = 0L
+        assertEquals("same tag must stay quiet during the 24h snooze", UpdateCheck.Quiet, updater.check())
+        now += UpdatePolicy.CHECK_INTERVAL_MS
+        store.lastCheck = 0L
+        val later = updater.check()
+        assertTrue("same tag must re-prompt after the 24h snooze", later is UpdateCheck.Available)
+        assertEquals("v3.16.0", (later as UpdateCheck.Available).offer.tagName)
     }
 
     @Test
@@ -211,18 +254,25 @@ class AppUpdaterTest {
         var lastCheck = 0L
         var etagValue: String? = null
         var snoozed: String? = null
+        var snoozedUntil = 0L
         var cached: CachedRelease? = null
         override suspend fun lastCheckEpoch(): Long = lastCheck
         override suspend fun etag(): String? = etagValue
         override suspend fun snoozedTag(): String? = snoozed
+        override suspend fun snoozedUntilEpoch(): Long = snoozedUntil
         override suspend fun cached(): CachedRelease? = cached
+        override suspend fun stampCheck(epochMs: Long, etag: String?) {
+            lastCheck = epochMs
+            etagValue = etag
+        }
         override suspend fun recordCheck(epochMs: Long, etag: String?, cached: CachedRelease?) {
             lastCheck = epochMs
             etagValue = etag
             this.cached = cached
         }
-        override suspend fun snooze(tagName: String) {
+        override suspend fun snooze(tagName: String, untilEpochMs: Long) {
             snoozed = tagName
+            snoozedUntil = untilEpochMs
         }
     }
 }

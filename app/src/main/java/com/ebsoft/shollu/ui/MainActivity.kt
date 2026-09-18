@@ -318,7 +318,12 @@ class MainActivity : ComponentActivity() {
             }
             withContext(Dispatchers.Main) {
                 when (result) {
-                    is InstallResult.Started -> updateProgress = 1f
+                    is InstallResult.Started -> {
+                        pendingUnknownSourcesOffer = null
+                        updateOffer = null
+                        updateProgress = null
+                        updateError = null
+                    }
                     is InstallResult.NeedsUnknownSources -> {
                         updateProgress = null
                         updateError = "Izinkan instalasi dari sumber ini."

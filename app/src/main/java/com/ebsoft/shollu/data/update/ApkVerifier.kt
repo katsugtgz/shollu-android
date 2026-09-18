@@ -13,6 +13,7 @@ import java.io.File
 object ApkVerifier {
 
     const val EXPECTED_PACKAGE = UpdatePolicy.PACKAGE_NAME
+    private val PLAY_INSTALLERS = setOf("com.android.vending", "com.google.android.feedback")
 
     fun digestMatches(file: File, digestHeader: String): Boolean {
         val expected = UpdatePolicy.parseSha256Digest(digestHeader) ?: return false
@@ -53,7 +54,25 @@ object ApkVerifier {
 
     fun installedAppOf(context: Context): InstalledApp {
         val info = installedInfo(context, signing = false) ?: return InstalledApp(0L, "")
-        return InstalledApp(archiveVersionCode(info), info.versionName ?: "")
+        return InstalledApp(
+            versionCode = archiveVersionCode(info),
+            versionName = info.versionName ?: "",
+            githubApkEligible = githubApkEligible(context)
+        )
+    }
+
+    fun githubApkEligible(context: Context): Boolean {
+        val installer = try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getInstallerPackageName(context.packageName)
+            }
+        } catch (_: Exception) {
+            null
+        }
+        return installer !in PLAY_INSTALLERS
     }
 
     private fun installedInfo(context: Context, signing: Boolean): PackageInfo? = try {

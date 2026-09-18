@@ -11,18 +11,20 @@ class AppUpdater(
     private val clock: () -> Long
 ) {
     suspend fun check(): UpdateCheck {
+        val app = installed.current()
+        if (!app.githubApkEligible) return UpdateCheck.Quiet
         val now = clock()
         val lastCheck = store.lastCheckEpoch()
-        if (!UpdatePolicy.shouldCheck(now, lastCheck)) return promptFromCached(store.cached())
+        if (!UpdatePolicy.shouldCheck(now, lastCheck)) return promptFromCached(now, store.cached())
 
         return when (val fetch = fetcher.fetchLatest(store.etag())) {
             is ReleaseFetch.Failed -> {
-                store.recordCheck(now, store.etag(), store.cached())
-                promptFromCached(store.cached())
+                store.stampCheck(now, store.etag())
+                promptFromCached(now, store.cached())
             }
             is ReleaseFetch.NotModified -> {
-                store.recordCheck(now, store.etag(), store.cached())
-                promptFromCached(store.cached())
+                store.stampCheck(now, store.etag())
+                promptFromCached(now, store.cached())
             }
             is ReleaseFetch.Fresh -> {
                 val asset = UpdatePolicy.pickApkAsset(fetch.assets)
@@ -37,20 +39,22 @@ class AppUpdater(
                     null
                 }
                 store.recordCheck(now, fetch.etag, cached)
-                promptFromCached(cached)
+                promptFromCached(now, cached)
             }
         }
     }
 
     suspend fun snooze(tagName: String) {
-        store.snooze(tagName)
+        store.snooze(tagName, clock() + UpdatePolicy.CHECK_INTERVAL_MS)
     }
 
-    private suspend fun promptFromCached(cached: CachedRelease?): UpdateCheck {
+    private suspend fun promptFromCached(now: Long, cached: CachedRelease?): UpdateCheck {
         if (cached == null) return UpdateCheck.Quiet
         val remoteCode = UpdatePolicy.versionCodeFromTag(cached.tagName) ?: return UpdateCheck.Quiet
         val app = installed.current()
-        if (!UpdatePolicy.shouldPrompt(app.versionCode, remoteCode, cached.tagName, store.snoozedTag())) {
+        val snoozed = store.snoozedTag()
+        val activeSnooze = if (store.snoozedUntilEpoch() > now) snoozed else null
+        if (!UpdatePolicy.shouldPrompt(app.versionCode, remoteCode, cached.tagName, activeSnooze)) {
             return UpdateCheck.Quiet
         }
         return UpdateCheck.Available(
@@ -66,7 +70,11 @@ class AppUpdater(
     }
 }
 
-data class InstalledApp(val versionCode: Long, val versionName: String)
+data class InstalledApp(
+    val versionCode: Long,
+    val versionName: String,
+    val githubApkEligible: Boolean = true
+)
 
 fun interface InstalledAppQuery {
     fun current(): InstalledApp
@@ -112,7 +120,9 @@ interface UpdateStore {
     suspend fun lastCheckEpoch(): Long
     suspend fun etag(): String?
     suspend fun snoozedTag(): String?
+    suspend fun snoozedUntilEpoch(): Long
     suspend fun cached(): CachedRelease?
+    suspend fun stampCheck(epochMs: Long, etag: String?)
     suspend fun recordCheck(epochMs: Long, etag: String?, cached: CachedRelease?)
-    suspend fun snooze(tagName: String)
+    suspend fun snooze(tagName: String, untilEpochMs: Long)
 }

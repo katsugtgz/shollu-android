@@ -17,12 +17,7 @@ class ApkInstallReceiver : BroadcastReceiver() {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirm = if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableExtra(EXTRA_CONFIRM_INTENT, Intent::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(EXTRA_CONFIRM_INTENT)
-                }
+                val confirm = confirmIntent(intent)
                 if (confirm != null) {
                     confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(confirm)
@@ -43,9 +38,22 @@ class ApkInstallReceiver : BroadcastReceiver() {
         }
     }
 
+    private fun confirmIntent(intent: Intent): Intent? {
+        // AOSP PackageInstaller.EXTRA_INTENT is android.content.pm.extra.INTENT (missing on
+        // some SDK stubs). Some OEMs also put the confirm activity under Intent.EXTRA_INTENT.
+        for (key in arrayOf(EXTRA_CONFIRM_INTENT, Intent.EXTRA_INTENT)) {
+            val confirm = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(key, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<Intent>(key)
+            }
+            if (confirm != null) return confirm
+        }
+        return null
+    }
+
     companion object {
-        // PackageInstaller.EXTRA_INTENT is hidden/missing on some SDK stubs; the wire
-        // name has been stable since API 21.
         const val EXTRA_CONFIRM_INTENT = "android.content.pm.extra.INTENT"
     }
 }

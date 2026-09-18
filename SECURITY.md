@@ -13,4 +13,4 @@ If you discover a security vulnerability or sensitive issue in Shollu Android, p
 
 We take security and privacy seriously:
 - Prayer times, location, and schedules stay on-device. No analytics.
-- The only network call is an optional GitHub Releases check (`GET /repos/katsugtgz/shollu-android/releases/latest`) on app launch, throttled to 24h. Downloaded APKs are sha256-checked against the GitHub asset digest and must match the currently installed signing certs before PackageInstaller runs. Failure is fail-closed (no install).
+- The optional updater checks GitHub Releases (`GET /repos/katsugtgz/shollu-android/releases/latest`) on app launch, throttled to 24h, then downloads the selected APK asset. Downloaded APKs are sha256-checked against the GitHub asset digest and must match the currently installed signing certs before PackageInstaller runs. Failure is fail-closed (no install).

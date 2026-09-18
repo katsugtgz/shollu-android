@@ -101,7 +101,7 @@ class UpdatePolicyTest {
     fun testParseSha256DigestRejectsBadInput() {
         assertNull(UpdatePolicy.parseSha256Digest(null))
         assertNull(UpdatePolicy.parseSha256Digest(""))
-        assertNull(UpdatePolicy.parseSha256Digest("sha256:zz"))
+        assertNull(UpdatePolicy.parseSha256Digest("sha256:" + "zz".repeat(32)))
         assertNull(UpdatePolicy.parseSha256Digest("sha256:abcd"))
         assertNull(UpdatePolicy.parseSha256Digest("md5:" + "ab".repeat(32)))
     }

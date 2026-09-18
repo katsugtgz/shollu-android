@@ -8,7 +8,7 @@ AlarmManager pipeline: arm/cancel prayer + agenda-reminder alarms, GPS timezone 
 - `AlarmTime.kt` — all device-zone ↔ city-offset math. Also `timezoneLabel`, `rederiveGpsTimezone`.
 - `ReminderAlarmScheduler.kt` — agenda alarms; entry `scheduleAllActiveReminders(context, reschedulingAfterBoot)`.
 - `BootCompletedReceiver.kt` — BOOT_COMPLETED / MY_PACKAGE_REPLACED / TIME_CHANGED / TIMEZONE_CHANGED.
-- `ApkInstallReceiver.kt` — PackageInstaller status; `STATUS_PENDING_USER_ACTION` starts the system confirm sheet; other statuses delete `cacheDir/shollu-update.apk`.
+- `ApkInstallReceiver.kt` — PackageInstaller status; `STATUS_PENDING_USER_ACTION` reads confirm Intent from `android.content.pm.extra.INTENT` then `Intent.EXTRA_INTENT`; other statuses delete `cacheDir/shollu-update.apk`.
 - `PrayerAlarmReceiver.kt`, `ReminderAlarmReceiver.kt` — fire paths; both end in goAsync + re-arm.
 
 ## CONVENTIONS

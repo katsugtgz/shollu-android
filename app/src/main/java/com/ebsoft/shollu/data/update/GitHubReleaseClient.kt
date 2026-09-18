@@ -113,13 +113,13 @@ class GitHubReleaseClient(
 
     private data class GithubReleaseJson(
         @SerializedName("tag_name") val tagName: String?,
-        val assets: List<GithubAssetJson>?
+        @SerializedName("assets") val assets: List<GithubAssetJson>?
     )
 
     private data class GithubAssetJson(
-        val name: String?,
+        @SerializedName("name") val name: String?,
         @SerializedName("browser_download_url") val browserDownloadUrl: String?,
-        val size: Long,
-        val digest: String?
+        @SerializedName("size") val size: Long,
+        @SerializedName("digest") val digest: String?
     )
 }
