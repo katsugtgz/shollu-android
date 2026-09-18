@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsoft). Kotlin 2.4.10 (AGP 9.3 built-in) + Jetpack Compose M3, single Gradle module `:app`, minSdk 26 / targetSdk 36 / compileSdk 37, Gradle 9.5, JVM 17, KSP 2.3.11 (independent versioning — no `<kotlin>-<ksp>` pairs). Prayer-time math, exact-alarm pipeline, Glance widget. All astronomy computed on-device; zero network.
+Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsoft). Kotlin 2.4.10 (AGP 9.3 built-in) + Jetpack Compose M3, single Gradle module `:app`, minSdk 26 / targetSdk 36 / compileSdk 37, Gradle 9.5, JVM 17, KSP 2.3.11 (independent versioning — no `<kotlin>-<ksp>` pairs). Prayer-time math, exact-alarm pipeline, Glance widget. All astronomy computed on-device.
 
 ## STRUCTURE
 
@@ -45,6 +45,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 | Release build / signing | `app/build.gradle.kts:40` | env → signing.properties → defaults; walkthrough in QUICKSTART.md |
 | Dep bumps | `gradle/libs.versions.toml` + verify floors in root `build.gradle.kts` still satisfied | |
 | Qibla/compass sensors | `ui/screens/qibla/QiblaCompassScreen.kt` + `engine/QiblaCalculator.kt` | |
+| APK self-update, GitHub release check, in-app install | `data/AGENTS.md` | |
 
 ## CODE MAP
 
@@ -60,7 +61,7 @@ Shollu — offline-first Indonesian prayer-times app (tribute to Shollu by Ebsof
 ## CONVENTIONS (deviations from standard Android)
 
 - NO ViewModel, NO DI framework — `SholluApplication` lazy singletons; screens take repos as params; state via `collectAsState` on DataStore/Room flows directly.
-- Interfaces exist as test seams (`IPrayerRepository`, `IReminderRepository`, `AppClock`) — program against them. Accepted asymmetry: `AlarmScheduler` builds its own `PrayerRepository(preferences)` directly.
+- Interfaces exist as test seams (`IPrayerRepository`, `IReminderRepository`, `AppClock`, `ReleaseFetcher`/`UpdateStore`) — program against them. Accepted asymmetry: `AlarmScheduler` builds its own `PrayerRepository(preferences)` directly.
 - AGP 9 built-in Kotlin: `org.jetbrains.kotlin.android` plugin is REMOVED (fatal under AGP 9); KGP pinned via `buildscript { dependencies { classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:<kotlin>") } }`.
 - Prayer pipeline uses the **city's fixed UTC offset, never device zone** (`AlarmTime` is the only converter).
 - `engine/` stays 100% Android-free (enforced by convention, see CONTRIBUTING.md).

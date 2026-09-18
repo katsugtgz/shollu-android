@@ -16,6 +16,7 @@
 | Room (only converters + seed plan) | `DataAndLocationTest.kt`, `data/db/SeedPlanRound2Test.kt` |
 | Qibla hardening | `engine/QiblaDeclinationRound2Test.kt`, `engine/QiblaDeclinationTest.kt` |
 | Only UI-adjacent tests (state holders, no Compose) | `ui/screens/scheduler/TimeFieldStateTest.kt`, `ui/util/AppLocaleTest.kt` |
+| UpdatePolicy / AppUpdater | `data/update/UpdatePolicyTest.kt`, `data/update/AppUpdaterTest.kt` |
 
 ## CONVENTIONS
 

@@ -6,6 +6,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.ebsoft.shollu.data.model.*
+import com.ebsoft.shollu.data.update.CachedRelease
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -69,6 +70,15 @@ class SholluPreferences(private val context: Context) {
         val OFFSET_ASHAR = intPreferencesKey("offset_ashar")
         val OFFSET_MAGHRIB = intPreferencesKey("offset_maghrib")
         val OFFSET_ISYA = intPreferencesKey("offset_isya")
+
+        val UPDATE_LAST_CHECK_EPOCH = longPreferencesKey("update_last_check_epoch")
+        val UPDATE_ETAG = stringPreferencesKey("update_etag")
+        val UPDATE_SNOOZED_TAG = stringPreferencesKey("update_snoozed_tag")
+        val UPDATE_SNOOZED_UNTIL = longPreferencesKey("update_snoozed_until")
+        val UPDATE_CACHED_TAG = stringPreferencesKey("update_cached_tag")
+        val UPDATE_CACHED_APK_URL = stringPreferencesKey("update_cached_apk_url")
+        val UPDATE_CACHED_APK_SIZE = longPreferencesKey("update_cached_apk_size")
+        val UPDATE_CACHED_DIGEST = stringPreferencesKey("update_cached_digest")
     }
 
     private val safeDataStore: Flow<Preferences> = context.dataStore.data.catch { exception ->
@@ -161,6 +171,33 @@ class SholluPreferences(private val context: Context) {
     /** Seeded-once marker: true once default presets have been seeded (successfully). */
     val defaultPresetsSeeded: Flow<Boolean> = safeDataStore.mapDistinct { prefs ->
         prefs[DEFAULT_PRESETS_SEEDED] ?: false
+    }
+
+    val updateLastCheckEpoch: Flow<Long> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_LAST_CHECK_EPOCH] ?: 0L
+    }
+
+    val updateEtag: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_ETAG]
+    }
+
+    val updateSnoozedTag: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_SNOOZED_TAG]
+    }
+
+    val updateSnoozedUntilEpoch: Flow<Long> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_SNOOZED_UNTIL] ?: 0L
+    }
+
+    val updateCachedRelease: Flow<CachedRelease?> = safeDataStore.mapDistinct { prefs ->
+        val tag = prefs[UPDATE_CACHED_TAG]
+        val url = prefs[UPDATE_CACHED_APK_URL]
+        val size = prefs[UPDATE_CACHED_APK_SIZE]
+        if (tag.isNullOrBlank() || url.isNullOrBlank() || size == null) {
+            null
+        } else {
+            CachedRelease(tag, url, size, prefs[UPDATE_CACHED_DIGEST].orEmpty())
+        }
     }
 
     /**
@@ -280,6 +317,45 @@ class SholluPreferences(private val context: Context) {
     suspend fun setAppLanguage(language: AppLanguage) {
         context.dataStore.edit { prefs ->
             prefs[APP_LANGUAGE] = language.name
+        }
+    }
+
+    suspend fun stampUpdateCheck(epochMs: Long, etag: String?) {
+        context.dataStore.edit { prefs ->
+            prefs[UPDATE_LAST_CHECK_EPOCH] = epochMs
+            if (etag.isNullOrBlank()) prefs.remove(UPDATE_ETAG) else prefs[UPDATE_ETAG] = etag
+        }
+    }
+
+    suspend fun recordUpdateCheck(
+        epochMs: Long,
+        etag: String?,
+        cachedTag: String?,
+        cachedUrl: String?,
+        cachedSize: Long?,
+        cachedDigest: String?
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[UPDATE_LAST_CHECK_EPOCH] = epochMs
+            if (etag.isNullOrBlank()) prefs.remove(UPDATE_ETAG) else prefs[UPDATE_ETAG] = etag
+            if (cachedTag.isNullOrBlank() || cachedUrl.isNullOrBlank() || cachedSize == null) {
+                prefs.remove(UPDATE_CACHED_TAG)
+                prefs.remove(UPDATE_CACHED_APK_URL)
+                prefs.remove(UPDATE_CACHED_APK_SIZE)
+                prefs.remove(UPDATE_CACHED_DIGEST)
+            } else {
+                prefs[UPDATE_CACHED_TAG] = cachedTag
+                prefs[UPDATE_CACHED_APK_URL] = cachedUrl
+                prefs[UPDATE_CACHED_APK_SIZE] = cachedSize
+                prefs[UPDATE_CACHED_DIGEST] = cachedDigest.orEmpty()
+            }
+        }
+    }
+
+    suspend fun snoozeUpdateTag(tagName: String, untilEpochMs: Long) {
+        context.dataStore.edit { prefs ->
+            prefs[UPDATE_SNOOZED_TAG] = tagName
+            prefs[UPDATE_SNOOZED_UNTIL] = untilEpochMs
         }
     }
 

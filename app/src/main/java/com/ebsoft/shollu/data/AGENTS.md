@@ -12,6 +12,7 @@ Room DB + DataStore prefs + repositories (prayer calc cache, city seed) + pure d
 - Prayer-time caching / midnight rollover → `repository/PrayerRepository.kt`, `repository/AppClock.kt`
 - City table bootstrap (raw JSON + fallback list) → `repository/CityRepository.kt`
 - Polar validity / next-prayer math → `model/PrayerTimes.kt`; method angles → `model/CalculationMethod.kt`
+- APK self-update files → `update/AppUpdater.kt`, `update/UpdatePolicy.kt`, `update/GitHubReleaseClient.kt`, `update/PreferenceUpdateStore.kt`, `update/ApkUpdateInstaller.kt`, `update/ApkVerifier.kt`, `update/UpdateModule.kt`
 
 ## CONVENTIONS
 - `SholluDatabase.seedPlan(seededMarker, existing)` is the pure idempotency core; `ensureDefaultPresets()` is the impure wrapper (mutex + marker read/write). Change seeding logic in `seedPlan`, not the wrapper.
@@ -29,6 +30,17 @@ Room DB + DataStore prefs + repositories (prayer calc cache, city seed) + pure d
 - `calculateForDateSync()` = `runBlocking(Dispatchers.IO)`; any exception → hardcoded Jakarta/KEMENAG_RI/ihtiyat-2 fallback. Never call from a coroutine (blocks a thread).
 - `CityRepository.initializeCitiesIfNeeded()` seeds from `R.raw.cities` (Gson → `List<CityEntity>`) when count==0; parse failure/empty → 14 hardcoded cities (12 Indonesia + Makkah + Madinah). Returns `Result<Unit>`. This class has NO interface — unlike Prayer/Reminder repos.
 - `AppClock` seam + internal `datePulseFlow(clock, pollIntervalMillis)`: wakes at midnight+50ms, capped at one poll interval (30s default) so wall-clock/timezone jumps re-emit. Value always from `clock`, delay only sets cadence.
+
+## APK self-update
+
+Done when check, cache, and install all hold:
+
+- Check: `AppUpdater.check()` from MainActivity `LaunchedEffect` only. Play-installed copies stay Quiet. Tests inject `ReleaseFetcher` + `UpdateStore` fakes.
+- Throttle: stamp last-check on failed fetch without rewriting the APK cache. A throttled check still prompts from cache.
+- Snooze: `Nanti` stores tag + expiry (`now + 24h`). Same tag re-prompts after expiry; a newer tag prompts immediately.
+- Digest: persist tag+url+size even with blank digest. Verify digest at install (`ApkVerifier`).
+- Gson DTOs in `GitHubReleaseClient` need `@SerializedName` on every JSON field plus the ProGuard keep rules — R8 rename otherwise drops `assets` and release APKs never prompt.
+- `InstallResult.Started` dismisses the Compose dialog; system PackageInstaller UI owns confirmation after that. `ApkUpdateInstaller` single-flights downloads and abandons uncommitted sessions.
 
 ## ANTI-PATTERNS
 - Don't reseed by checking table emptiness alone — user deleting all presets would get them back. Marker decides.
