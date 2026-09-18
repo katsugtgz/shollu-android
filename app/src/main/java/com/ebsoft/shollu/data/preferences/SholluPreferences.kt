@@ -59,6 +59,14 @@ class SholluPreferences(private val context: Context) {
         val OFFSET_ASHAR = intPreferencesKey("offset_ashar")
         val OFFSET_MAGHRIB = intPreferencesKey("offset_maghrib")
         val OFFSET_ISYA = intPreferencesKey("offset_isya")
+
+        val UPDATE_LAST_CHECK_EPOCH = longPreferencesKey("update_last_check_epoch")
+        val UPDATE_ETAG = stringPreferencesKey("update_etag")
+        val UPDATE_SNOOZED_TAG = stringPreferencesKey("update_snoozed_tag")
+        val UPDATE_CACHED_TAG = stringPreferencesKey("update_cached_tag")
+        val UPDATE_CACHED_APK_URL = stringPreferencesKey("update_cached_apk_url")
+        val UPDATE_CACHED_APK_SIZE = longPreferencesKey("update_cached_apk_size")
+        val UPDATE_CACHED_DIGEST = stringPreferencesKey("update_cached_digest")
     }
 
     private val safeDataStore: Flow<Preferences> = context.dataStore.data.catch { exception ->
@@ -153,6 +161,34 @@ class SholluPreferences(private val context: Context) {
         prefs[DEFAULT_PRESETS_SEEDED] ?: false
     }
 
+    val updateLastCheckEpoch: Flow<Long> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_LAST_CHECK_EPOCH] ?: 0L
+    }
+
+    val updateEtag: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_ETAG]
+    }
+
+    val updateSnoozedTag: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_SNOOZED_TAG]
+    }
+
+    val updateCachedTag: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_CACHED_TAG]
+    }
+
+    val updateCachedApkUrl: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_CACHED_APK_URL]
+    }
+
+    val updateCachedApkSize: Flow<Long?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_CACHED_APK_SIZE]
+    }
+
+    val updateCachedDigest: Flow<String?> = safeDataStore.mapDistinct { prefs ->
+        prefs[UPDATE_CACHED_DIGEST]
+    }
+
     /**
      * Persist the selected city. [isGps] marks a GPS-derived city (DST-re-derivation eligible);
      * fixed-list selections keep the default false, so choosing a city from the list always
@@ -238,6 +274,37 @@ class SholluPreferences(private val context: Context) {
     suspend fun setAppLanguage(language: AppLanguage) {
         context.dataStore.edit { prefs ->
             prefs[APP_LANGUAGE] = language.name
+        }
+    }
+
+    suspend fun recordUpdateCheck(
+        epochMs: Long,
+        etag: String?,
+        cachedTag: String?,
+        cachedUrl: String?,
+        cachedSize: Long?,
+        cachedDigest: String?
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[UPDATE_LAST_CHECK_EPOCH] = epochMs
+            if (etag.isNullOrBlank()) prefs.remove(UPDATE_ETAG) else prefs[UPDATE_ETAG] = etag
+            if (cachedTag.isNullOrBlank() || cachedUrl.isNullOrBlank() || cachedSize == null) {
+                prefs.remove(UPDATE_CACHED_TAG)
+                prefs.remove(UPDATE_CACHED_APK_URL)
+                prefs.remove(UPDATE_CACHED_APK_SIZE)
+                prefs.remove(UPDATE_CACHED_DIGEST)
+            } else {
+                prefs[UPDATE_CACHED_TAG] = cachedTag
+                prefs[UPDATE_CACHED_APK_URL] = cachedUrl
+                prefs[UPDATE_CACHED_APK_SIZE] = cachedSize
+                prefs[UPDATE_CACHED_DIGEST] = cachedDigest.orEmpty()
+            }
+        }
+    }
+
+    suspend fun snoozeUpdateTag(tagName: String) {
+        context.dataStore.edit { prefs ->
+            prefs[UPDATE_SNOOZED_TAG] = tagName
         }
     }
 

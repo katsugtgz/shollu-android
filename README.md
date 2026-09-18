@@ -11,7 +11,7 @@
 [![Codebase Design](https://img.shields.io/badge/Architecture-Deep%20Modules-success.svg?style=flat-square)](https://www.skills.sh/mattpocock/skills/codebase-design)
 
 <p align="center">
-  A modern, 100% offline-first Android reimagining of the classic <b>Shollu</b> desktop software by <b>Ebsoft (Ebta Setiawan)</b>.<br/>
+  A modern, offline-first Android reimagining of the classic <b>Shollu</b> desktop software by <b>Ebsoft (Ebta Setiawan)</b>.<br/>
   Featuring astronomical solar algorithms, persistent status bar countdowns, maximum-intensity vibration alerting, rich Islamic scheduler, Qibla compass, and Material 3 design.
 </p>
 
@@ -32,8 +32,8 @@
 * **Doze & WakeLock Resilient**: Employs `AlarmManager.setExactAndAllowWhileIdle()` with safe bounded WakeLocks.
 * **Lockscreen Alert**: Displays a full-screen alarm overlay on lockscreen with immediate *"Hentikan Getar"* (Stop Vibration) and *"Tunda"* (Snooze) controls.
 
-### 3. 🌙 100% Offline Astronomical Engine
-* **Zero Internet Required**: Calculations for Subuh, Terbit, Dhuha, Dzuhur, Ashar, Maghrib, and Isya run completely on-device via Jean Meeus solar ephemeris algorithms.
+### 3. 🌙 Offline Astronomical Engine
+* **Hisab never needs internet**: Calculations for Subuh, Terbit, Dhuha, Dzuhur, Ashar, Maghrib, and Isya run completely on-device via Jean Meeus solar ephemeris algorithms.
 * **Kemenag RI Standard**: Subuh 20°, Isya 18°, with standard +2 minute safety *Ihtiyat*.
 * **Global Authorities Supported**: Muslim World League (MWL), Egyptian Survey Authority, Umm Al-Qura (Makkah), University of Islamic Sciences (Karachi), ISNA, MUIS Singapore, and Dubai.
 * **Asr Juristic Rules**: Shafi'i / Maliki / Hanbali (1x shadow) and Hanafi (2x shadow).
@@ -111,7 +111,7 @@ No Play Store needed — grab the signed release APK:
 
 1. Download `shollu-v3.10.0.apk` from the [Releases page](https://github.com/katsugtgz/shollu-android/releases/latest).
 2. Open it on your device (Android 8.0+). If prompted, allow *"Install unknown apps"* for your browser/file manager.
-3. Install. First launch preloads the city database and arms prayer alarms automatically — 100% offline, no account, no internet required.
+3. Install. First launch preloads the city database and arms prayer alarms automatically — no account. An optional GitHub check may prompt if a newer release APK exists (`Nanti` / `Perbarui`). Prayer math still runs fully offline.
 
 > Upgrades install over previous versions signed with the same key. If Android refuses an update, uninstall the old copy first (this wipes local reminders/settings).
 

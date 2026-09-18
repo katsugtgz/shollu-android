@@ -14,6 +14,7 @@ import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.data.repository.IReminderRepository
 import com.ebsoft.shollu.data.repository.PrayerRepository
 import com.ebsoft.shollu.data.repository.ReminderRepository
+import com.ebsoft.shollu.data.update.UpdateModule
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.receiver.ReminderAlarmReceiver
 import com.ebsoft.shollu.receiver.ReminderAlarmScheduler
@@ -34,6 +35,7 @@ class SholluApplication : Application() {
     val cityRepository by lazy { CityRepository(this, database.cityDao()) }
     val prayerRepository: IPrayerRepository by lazy { PrayerRepository(preferences) }
     val reminderRepository: IReminderRepository by lazy { ReminderRepository(database.reminderDao()) }
+    val updates by lazy { UpdateModule(this, preferences) }
 
     override fun onCreate() {
         super.onCreate()

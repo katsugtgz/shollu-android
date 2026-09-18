@@ -20,6 +20,7 @@ Compose presentation layer. MainActivity = single state hub; screens are dumb pa
 | Localized prayer names/icons | `util/PrayerUiExtensions.kt` |
 | Date locale from app language | `util/AppLocale.kt` (`rememberAppLocale()`) |
 | Alarm fullscreen UI | `alarm/FullscreenAlarmActivity.kt` |
+| Update prompt | `update/UpdatePrompt.kt` + `MainActivity` `LaunchedEffect` |
 
 ## CONVENTIONS
 

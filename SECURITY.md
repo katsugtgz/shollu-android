@@ -12,5 +12,5 @@
 If you discover a security vulnerability or sensitive issue in Shollu Android, please report it via private GitHub Security Advisory or by creating a private issue.
 
 We take security and privacy seriously:
-- Shollu is 100% offline-first.
-- User location coordinates and prayer schedules are processed purely on-device and never transmitted to external analytics servers.
+- Prayer times, location, and schedules stay on-device. No analytics.
+- The only network call is an optional GitHub Releases check (`GET /repos/katsugtgz/shollu-android/releases/latest`) on app launch, throttled to 24h. Downloaded APKs are sha256-checked against the GitHub asset digest and must match the currently installed signing certs before PackageInstaller runs. Failure is fail-closed (no install).

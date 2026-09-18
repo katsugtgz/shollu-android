@@ -2,11 +2,14 @@ package com.ebsoft.shollu.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -37,6 +40,10 @@ import com.ebsoft.shollu.ui.screens.scheduler.SchedulerScreen
 import com.ebsoft.shollu.ui.screens.settings.LocationPickerDialog
 import com.ebsoft.shollu.ui.screens.settings.SettingsScreen
 import com.ebsoft.shollu.ui.theme.SholluTheme
+import com.ebsoft.shollu.data.update.InstallResult
+import com.ebsoft.shollu.data.update.UpdateCheck
+import com.ebsoft.shollu.data.update.UpdateOffer
+import com.ebsoft.shollu.ui.update.UpdatePromptDialog
 import android.location.LocationManager
 import com.google.android.gms.location.Priority
 import java.util.TimeZone
@@ -52,6 +59,11 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
 
+    private var pendingUnknownSourcesOffer: UpdateOffer? = null
+    private var updateOffer by mutableStateOf<UpdateOffer?>(null)
+    private var updateProgress by mutableStateOf<Float?>(null)
+    private var updateError by mutableStateOf<String?>(null)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -60,6 +72,17 @@ class MainActivity : ComponentActivity() {
         val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
         if (fineLocationGranted || coarseLocationGranted) {
             autoDetectLocation()
+        }
+    }
+
+    private val unknownSourcesLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val offer = pendingUnknownSourcesOffer ?: return@registerForActivityResult
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.canRequestPackageInstalls()
+        ) {
+            startUpdateInstall(offer)
         }
     }
 
@@ -95,6 +118,15 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf<ScheduleEntry?>(null)
             }
             var showLocationPicker by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                val check = withContext(Dispatchers.IO) {
+                    app.updates.updater.check()
+                }
+                if (check is UpdateCheck.Available) {
+                    updateOffer = check.offer
+                }
+            }
 
             val items = listOf(
                 Screen.Home,
@@ -235,6 +267,67 @@ class MainActivity : ComponentActivity() {
                             },
                             onDismiss = { showLocationPicker = false }
                         )
+                    }
+
+                    val offer = updateOffer
+                    if (offer != null) {
+                        UpdatePromptDialog(
+                            offer = offer,
+                            progress = updateProgress,
+                            error = updateError,
+                            onDismiss = {
+                                pendingUnknownSourcesOffer = null
+                                updateOffer = null
+                                updateProgress = null
+                                updateError = null
+                            },
+                            onLater = {
+                                pendingUnknownSourcesOffer = null
+                                updateOffer = null
+                                updateProgress = null
+                                updateError = null
+                                app.applicationScope.launch(Dispatchers.IO) {
+                                    app.updates.updater.snooze(offer.tagName)
+                                }
+                            },
+                            onUpdate = { startUpdateInstall(offer) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun unknownSourcesSettingsIntent(): Intent =
+        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+            data = Uri.parse("package:$packageName")
+        }
+
+    private fun startUpdateInstall(offer: UpdateOffer) {
+        val app = application as SholluApplication
+        val installer = app.updates.installer
+        app.applicationScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                updateError = null
+                updateProgress = 0f
+            }
+            val result = installer.install(offer) { p ->
+                app.applicationScope.launch(Dispatchers.Main) {
+                    updateProgress = p
+                }
+            }
+            withContext(Dispatchers.Main) {
+                when (result) {
+                    is InstallResult.Started -> updateProgress = 1f
+                    is InstallResult.NeedsUnknownSources -> {
+                        updateProgress = null
+                        updateError = "Izinkan instalasi dari sumber ini."
+                        pendingUnknownSourcesOffer = offer
+                        unknownSourcesLauncher.launch(unknownSourcesSettingsIntent())
+                    }
+                    is InstallResult.Failed -> {
+                        updateProgress = null
+                        updateError = result.message
                     }
                 }
             }
