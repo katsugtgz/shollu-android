@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- updatePeriodMillis=0 = no periodic APPWIDGET_UPDATE: the widget is event-driven via
+     updateSholluWidgets() (prayer alarm fire, boot/time change, city/GPS change,
+     hisab/ihtiyat/theme settings). A 30-min tick cold-started the killed process
+     up to 48x/day for content that only changes at prayer boundaries.
+     Guarded by WidgetProviderInfoTest. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
     android:minHeight="110dp"
     android:targetCellWidth="3"
     android:targetCellHeight="2"
-    android:updatePeriodMillis="1800000"
+    android:updatePeriodMillis="0"
     android:previewImage="@drawable/ic_widget_preview"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
