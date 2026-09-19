@@ -371,22 +371,25 @@ private fun exportSchedule(
     locale: Locale = Locale.getDefault()
 ) {
     val monthName = yearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale))
-    val htmlContent = buildString {
-        appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Jadwal Sholat ${city.name} - $monthName</title>")
-        appendLine("<style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:8px;text-align:center;} th{background:#0D6A53;color:#fff;}</style></head><body>")
-        appendLine("<h2>Jadwal Waktu Sholat ${city.name} - $monthName</h2>")
-        appendLine("<p>Dihitung menggunakan software Shollu (Ebsoft Algorithm)</p>")
-        appendLine("<table><tr><th>Tgl</th><th>Imsak</th><th>Subuh</th><th>Terbit</th><th>Dhuha</th><th>Dzuhur</th><th>Ashar</th><th>Maghrib</th><th>Isya</th></tr>")
-        for (item in schedule) {
-            appendLine("<tr><td>${item.date.dayOfMonth}</td><td>${item.getFormattedTimeFor(PrayerType.IMSAK)}</td><td>${item.getFormattedTimeFor(PrayerType.SUBUH)}</td><td>${item.getFormattedTimeFor(PrayerType.TERBIT)}</td><td>${item.getFormattedTimeFor(PrayerType.DHUHA)}</td><td>${item.getFormattedTimeFor(PrayerType.DZUHUR)}</td><td>${item.getFormattedTimeFor(PrayerType.ASHAR)}</td><td>${item.getFormattedTimeFor(PrayerType.MAGHRIB)}</td><td>${item.getFormattedTimeFor(PrayerType.ISYA)}</td></tr>")
-        }
-        appendLine("</table></body></html>")
+    val tableLines = schedule.map { item ->
+        listOf(
+            item.date.dayOfMonth.toString(),
+            item.getFormattedTimeFor(PrayerType.IMSAK),
+            item.getFormattedTimeFor(PrayerType.SUBUH),
+            item.getFormattedTimeFor(PrayerType.TERBIT),
+            item.getFormattedTimeFor(PrayerType.DHUHA),
+            item.getFormattedTimeFor(PrayerType.DZUHUR),
+            item.getFormattedTimeFor(PrayerType.ASHAR),
+            item.getFormattedTimeFor(PrayerType.MAGHRIB),
+            item.getFormattedTimeFor(PrayerType.ISYA)
+        )
     }
-
+    val payload = ScheduleShare.build(city.name, monthName, tableLines)
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/html"
-        putExtra(Intent.EXTRA_SUBJECT, "Jadwal Sholat ${city.name} - $monthName")
-        putExtra(Intent.EXTRA_TEXT, htmlContent)
+        type = payload.mimeType
+        putExtra(Intent.EXTRA_SUBJECT, payload.subject)
+        putExtra(Intent.EXTRA_TEXT, payload.plain)
+        putExtra(Intent.EXTRA_HTML_TEXT, payload.html)
     }
     context.startActivity(Intent.createChooser(sendIntent, "Ekspor Jadwal Sholat"))
 }

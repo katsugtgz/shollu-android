@@ -39,6 +39,9 @@ class SholluPreferences(private val context: Context) {
         /** Seeded-once marker for the default preset reminders (see SholluDatabase.seedPlan). */
         val DEFAULT_PRESETS_SEEDED = booleanPreferencesKey("default_presets_seeded")
 
+        /** Last applied [com.ebsoft.shollu.data.db.SholluDatabase.PRESET_CATALOG_GENERATION]. */
+        val PRESET_CATALOG_GENERATION = intPreferencesKey("preset_catalog_generation")
+
         /**
          * Fingerprint of the last COMPLETED prayer-fleet arm pass
          * (see AlarmScheduler.armingFingerprint). Absent = never armed since install (or the
@@ -163,7 +166,7 @@ class SholluPreferences(private val context: Context) {
         )
     }
 
-    /** True when the selected city was GPS-derived (its timezone is a DST snapshot). */
+    /** True when the selected city was GPS-derived (offset from lat/lon via GpsOffset). */
     val isSelectedCityGps: Flow<Boolean> = safeDataStore.mapDistinct { prefs ->
         prefs[SELECTED_CITY_IS_GPS] ?: false
     }
@@ -171,6 +174,11 @@ class SholluPreferences(private val context: Context) {
     /** Seeded-once marker: true once default presets have been seeded (successfully). */
     val defaultPresetsSeeded: Flow<Boolean> = safeDataStore.mapDistinct { prefs ->
         prefs[DEFAULT_PRESETS_SEEDED] ?: false
+    }
+
+    /** 0 if unset. [ensureDefaultPresets] treats 0+seeded as generation 1. */
+    val presetCatalogGeneration: Flow<Int> = safeDataStore.mapDistinct { prefs ->
+        prefs[PRESET_CATALOG_GENERATION] ?: 0
     }
 
     val updateLastCheckEpoch: Flow<Long> = safeDataStore.mapDistinct { prefs ->
@@ -215,9 +223,8 @@ class SholluPreferences(private val context: Context) {
     }
 
     /**
-     * Persist the selected city. [isGps] marks a GPS-derived city (DST-re-derivation eligible);
-     * fixed-list selections keep the default false, so choosing a city from the list always
-     * clears the flag.
+     * Persist the selected city. [isGps] marks a GPS-derived city (`GpsOffset` from coordinates,
+     * re-derived on TIMEZONE_CHANGED); fixed-list selections keep the default false.
      */
     suspend fun updateCity(city: City, isGps: Boolean = false) {
         context.dataStore.edit { prefs ->
@@ -234,6 +241,12 @@ class SholluPreferences(private val context: Context) {
     suspend fun markDefaultPresetsSeeded() {
         context.dataStore.edit { prefs ->
             prefs[DEFAULT_PRESETS_SEEDED] = true
+        }
+    }
+
+    suspend fun setPresetCatalogGeneration(generation: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[PRESET_CATALOG_GENERATION] = generation
         }
     }
 

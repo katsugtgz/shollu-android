@@ -1,5 +1,6 @@
 package com.ebsoft.shollu.ui.screens.settings
 
+import com.ebsoft.shollu.data.model.AsrJuristic
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
 import kotlinx.coroutines.sync.Mutex
@@ -12,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
  */
 interface SettingsMutations {
     suspend fun updateCalculationMethod(method: CalculationMethod)
+    suspend fun updateAsrJuristic(juristic: AsrJuristic)
 
     /** Atomic persisted RMW (DataStore edit transform): apply [delta] to the stored ihtiyat. */
     suspend fun adjustIhtiyatMinutes(delta: Int)
@@ -37,6 +39,7 @@ interface SettingsMutations {
  *
  * Matrix (control -> write / reschedule / widget / other):
  *  - Metode Hisab      -> yes / yes / YES (new in #18) / -
+ *  - Asr juristic      -> yes / yes / YES / Shafi'i 1x vs Hanafi 2x
  *  - Ihtiyat stepper   -> yes / yes / YES (new in #18) / clamped 0..10
  *  - Hijri adjustment  -> yes / no  / no  / clamped -2..2
  *  - Pre-prayer toggle -> yes / yes / no  / -
@@ -86,7 +89,7 @@ class SettingsActions(
          */
         private val effectLaneLocks = java.util.concurrent.ConcurrentHashMap<EffectLane, Mutex>()
 
-        private enum class EffectLane { CALCULATION_METHOD, IHTIYAT, PRE_PRAYER, THEME_MODE, ONGOING_NOTIFICATION }
+        private enum class EffectLane { CALCULATION_METHOD, ASR_JURISTIC, IHTIYAT, PRE_PRAYER, THEME_MODE, ONGOING_NOTIFICATION }
 
         private fun lane(lane: EffectLane): Mutex = effectLaneLocks.getOrPut(lane) { Mutex() }
     }
@@ -94,6 +97,13 @@ class SettingsActions(
     /** Metode Hisab: write -> reschedule -> refresh widget, serialized end-to-end. */
     suspend fun setCalculationMethod(method: CalculationMethod) = lane(EffectLane.CALCULATION_METHOD).withLock {
         mutations.updateCalculationMethod(method)
+        rescheduleAlarms()
+        refreshWidgets()
+    }
+
+    /** Asr juristic (Shafi'i 1x vs Hanafi 2x): write -> reschedule -> refresh widget. */
+    suspend fun setAsrJuristic(juristic: AsrJuristic) = lane(EffectLane.ASR_JURISTIC).withLock {
+        mutations.updateAsrJuristic(juristic)
         rescheduleAlarms()
         refreshWidgets()
     }

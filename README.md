@@ -3,9 +3,9 @@
 # 🕌 Shollu for Android
 ### *Modern Islamic Prayer Reminder & Islamic Scheduler*
 
-[![Release](https://img.shields.io/badge/release-v3.10.0-0D6A53.svg?style=flat-square)](https://github.com/katsugtgz/shollu-android/releases)
+[![Release](https://img.shields.io/github/v/release/katsugtgz/shollu-android?style=flat-square&color=0D6A53)](https://github.com/katsugtgz/shollu-android/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-D4AF37.svg?style=flat-square)](LICENSE)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg?style=flat-square&logo=kotlin)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple.svg?style=flat-square&logo=kotlin)](https://kotlinlang.org)
 [![Android](https://img.shields.io/badge/Android-API%2026%2B-green.svg?style=flat-square&logo=android)](https://developer.android.com)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4.svg?style=flat-square&logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
 [![Codebase Design](https://img.shields.io/badge/Architecture-Deep%20Modules-success.svg?style=flat-square)](https://www.skills.sh/mattpocock/skills/codebase-design)
@@ -24,12 +24,12 @@
 ### 1. ⏱️ Persistent Status Bar Countdown (Priority Feature)
 * **Docked Notification Shade Bar**: `setOngoing(true)` non-dismissible notification that cannot be accidentally swiped away by user.
 * **Live Countdown Timer**: Real-time seconds countdown until the next prayer (`Menuju Dzuhur 11:58 WIB • 00:42:15 lagi`).
-* **DND Survival**: Stays visible across Doze mode and priority filtering.
-* **Master Switch**: Cleanly toggleable only inside the Shollu Settings screen.
+* **Doze Survival**: Foreground `SPECIAL_USE` service + system Chronometer; channel is `IMPORTANCE_LOW` (no DND bypass).
+* **Master Switch**: Settings toggle or the notification **Matikan** action. Swipe-dismiss is off (`setOngoing(true)`).
 
 ### 2. 📳 Maximum-Intensity Vibration Alerting
-* **Auditory Silence with Firm Haptics**: Delivers high-power physical notifications using continuous waveform vibration patterns (`[0, 800, 300, 800, 300, 1200, 500]` ms) at maximum amplitude (255).
-* **Doze & WakeLock Resilient**: Employs `AlarmManager.setExactAndAllowWhileIdle()` with safe bounded WakeLocks.
+* **Auditory Silence with Firm Haptics**: Silent notification channel; app-owned waveform at amplitude 255 when the vibrator supports it. Alarm pattern is duty-cycled (`[0, 400, 250, 400, 250, 800, 1900]` ms) so the motor is not pegged for the full 45s cap.
+* **Doze & WakeLock Resilient**: Prayer alerts arm with `AlarmManager.setAlarmClock`. API 31+ prompts `SCHEDULE_EXACT_ALARM` when `canScheduleExactAlarms()` is false. WakeLocks are capped at 60s.
 * **Lockscreen Alert**: Displays a full-screen alarm overlay on lockscreen with immediate *"Hentikan Getar"* (Stop Vibration) and *"Tunda"* (Snooze) controls.
 
 ### 3. 🌙 Offline Astronomical Engine
@@ -47,10 +47,9 @@
   * ☀️ *Sholat Dhuha*: Daily 08:30 morning reminder.
 * **Custom Agenda Creator**: Create unlimited custom one-time or recurring Islamic reminders with custom notes and haptic alerts.
 
-### 5. 📍 Preloaded 500+ Indonesian Cities Database
-* Comprehensive offline SQLite/JSON database of all 38 Indonesian provinces and 514 cities/regencies (Kabupaten/Kota se-Indonesia) with accurate coordinates and timezones (WIB, WITA, WIT).
-* Major international capitals (Makkah, Madinah, Al-Quds, Kuala Lumpur, Cairo, Istanbul, London, Tokyo).
-* One-tap GPS Auto-Location detection with reverse geocoding fallback.
+### 5. 📍 Offline City Seed + GPS
+* Bundled `cities.json` seed: **63** places (55 Indonesian cities across 36 provinces + 8 capitals: Makkah, Madinah, Al-Quds, Kuala Lumpur, Cairo, Istanbul, London, Tokyo) with fixed WIB/WITA/WIT (or local) offsets.
+* One-tap GPS: fused location when Play Services exists (lazy client), else `LocationManager`; reverse-geocode for the label; prayer offset from coordinates (`GpsOffset`), not the phone's zone.
 
 ### 6. 🧭 Interactive Qibla Compass & Calendar
 * Sensor-fused real-time compass with shortest-angular-delta smoothing (no 360° flip artifacts).
@@ -58,7 +57,7 @@
 * Hijri-Gregorian converter (100-year verified arithmetic) and one-tap Monthly Schedule export to HTML/Text.
 
 ### 7. 📱 Glance App Widgets & Floating Dropzone
-* **Jetpack Glance Widget**: Compact countdown and full daily timetable card for your home screen.
+* **Jetpack Glance Widget**: One home-screen provider — next-prayer header plus a five-prayer row (not two separate widgets).
 * **Floating Dropzone**: Draggable floating pill overlay for desktop-style experience on Android.
 
 ---
@@ -68,37 +67,37 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                       UI & Widgets                          │
-│  (Compose Screens, ViewModels, Glance Widget, Dropzone)     │
+│  (Compose Screens, Glance Widget, Dropzone — no ViewModel)  │
 └───────────────┬─────────────────────────────┬───────────────┘
                 │ (Clean Seam)                │ (Clean Seam)
 ┌───────────────▼──────────────┐ ┌────────────▼───────────────┐
 │     Repository Interfaces    │ │    System Alarm Schedulers  │
 │ - IPrayerRepository          │ │ - AlarmScheduler            │
 │ - IReminderRepository        │ │ - ReminderAlarmScheduler    │
-│ - IUserPreferencesRepository │ └────────────┬───────────────┘
+│ - SholluPreferences          │ └────────────┬───────────────┘
 └───────────────┬──────────────┘              │
                 │                             │
 ┌───────────────▼─────────────────────────────▼───────────────┐
-│              Pure Domain Calculators (0 Framework Deps)     │
-│ - AstroCalculator (Jean Meeus solar ephemeris)              │
-│ - QiblaCalculator (Great Circle spherical trigonometry)     │
-│ - HijriCalendarHelper (Umm Al-Qura arithmetic calendar)     │
+│              Domain calculators                             │
+│ - AstroCalculator / GpsOffset / HijriCalendarHelper         │
+│   (Android-free)                                            │
+│ - QiblaCalculator (SensorManager + spherical trig)          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **Domain Isolation**: Pure mathematical models and algorithms (`engine/`) contain zero Android dependencies.
-- **Deep Seams**: Repositories expose minimal Flow-based interfaces and manage all caching, calculations, and Room/DataStore persistence under the hood.
-- **Robustness**: 7 dedicated test suites with >45 automated unit tests and 6 adversarial stress vectors verify polar boundary safety, Doze mode lifecycle, and midnight rollovers.
+- **Domain Isolation**: Prayer math, GPS offset bands, and Hijri arithmetic in `engine/` stay Android-free. Qibla compass helpers import `SensorManager`.
+- **Deep Seams**: Repositories expose Flow interfaces; prefs are concrete `SholluPreferences` (no ViewModel).
+- **Robustness**: JVM suite — 40 `*Test.kt` files, 258 `@Test` methods, 5 numbered adversarial vectors (polar, midnight rollover, request codes). Doze itself is not simulated on the JVM.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Language**: Kotlin 2.0.21
+- **Language**: Kotlin 2.4.10
 - **UI Framework**: Jetpack Compose + Material 3 (Material You Dynamic Theming, Emerald Green, Navy Gold, AMOLED Dark)
-- **Database**: Room Database 2.6.1 + KSP
+- **Database**: Room Database 2.8.4 + KSP
 - **Preferences**: Jetpack DataStore
-- **Background & Alarms**: Exact AlarmManager (`SCHEDULE_EXACT_ALARM`, `USE_EXACT_ALARM`), Foreground Services, Coroutines & Flow
+- **Background & Alarms**: `AlarmManager.setAlarmClock` (`SCHEDULE_EXACT_ALARM`, `USE_EXACT_ALARM`), Foreground Services, Coroutines & Flow
 - **Widgets**: Jetpack Glance 1.1.1
 - **Location**: Google Play Services Location & Android Geocoder
 - **Target SDK**: Android 16 (API 36) | **Min SDK**: Android 8.0 (API 26)
@@ -109,7 +108,7 @@
 
 No Play Store needed — grab the signed release APK:
 
-1. Download `shollu-v3.10.0.apk` from the [Releases page](https://github.com/katsugtgz/shollu-android/releases/latest).
+1. Download the latest signed APK from the [Releases page](https://github.com/katsugtgz/shollu-android/releases/latest).
 2. Open it on your device (Android 8.0+). If prompted, allow *"Install unknown apps"* for your browser/file manager.
 3. Install. First launch preloads the city database and arms prayer alarms automatically — no account. An optional GitHub check may prompt if a newer release APK exists (`Nanti` / `Perbarui`). Prayer math still runs fully offline.
 

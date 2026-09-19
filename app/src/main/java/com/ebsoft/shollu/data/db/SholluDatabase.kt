@@ -55,7 +55,7 @@ abstract class SholluDatabase : RoomDatabase() {
 
         /**
          * Default preset reminders seeded on first run (pure, JVM-testable).
-         * Three of them are enabled and therefore must exist BEFORE ReminderAlarmScheduler
+         * All six are enabled and therefore must exist BEFORE ReminderAlarmScheduler
          * arms reminders, or a fresh install never arms them.
          */
         fun defaultPresets(): List<ReminderEntity> = listOf(
@@ -80,13 +80,33 @@ abstract class SholluDatabase : RoomDatabase() {
                 isMaxVibration = true
             ),
             ReminderEntity(
+                title = "Persiapan Puasa Senin & Kamis (malam sebelumnya)",
+                description = "Pengingat malam Minggu dan Rabu untuk puasa Senin & Kamis esok hari",
+                timeHour = 20,
+                timeMinute = 0,
+                reminderType = ReminderType.PRESET_SENIN_KAMIS,
+                daysOfWeek = DaysOfWeek("7,3"), // Sunday, Wednesday
+                isEnabled = true,
+                isMaxVibration = true
+            ),
+            ReminderEntity(
+                title = "Puasa Ayyamul Bidh",
+                description = "Puasa sunnah tanggal 13, 14, 15 Hijriah",
+                timeHour = 20,
+                timeMinute = 0,
+                reminderType = ReminderType.PRESET_AYYAMUL_BIDH,
+                daysOfWeek = DaysOfWeek.EVERYDAY,
+                isEnabled = true,
+                isMaxVibration = true
+            ),
+            ReminderEntity(
                 title = "Sholat Tahajjud (Qiyamullail)",
                 description = "Mendirikan sholat malam di sepertiga malam akhir",
                 timeHour = 3,
                 timeMinute = 45,
                 reminderType = ReminderType.PRESET_TAHAJJUD,
                 daysOfWeek = DaysOfWeek.EVERYDAY,
-                isEnabled = false,
+                isEnabled = true,
                 isMaxVibration = true
             ),
             ReminderEntity(
@@ -102,18 +122,51 @@ abstract class SholluDatabase : RoomDatabase() {
         )
 
         /**
+         * Catalog generation for [defaultPresets]. Bump when new auto-seeded rows are added.
+         * Persisted in DataStore; missing key on an already-seeded install means generation 1
+         * (the original four-row catalog).
+         */
+        const val PRESET_CATALOG_GENERATION = 2
+
+        /**
          * Idempotency core (pure): what — if anything — to insert this run.
          *
          * @param seededMarker the persisted seeded-once marker; once true, a user who deleted
          *   EVERY preset is never re-seeded (empty table alone must not trigger seeding again).
          * @param existing the reminders table snapshot, or null when the read FAILED — abort
          *   (inserting on unknown state could duplicate presets).
+         * @param catalogGeneration last applied catalog generation (0 = never seeded).
+         *   Generation 1 was Al-Kahfi / sahur Senin-Kamis / Tahajjud / Dhuha.
+         *   Generation 2 adds Ayyamul Bidh + malam-sebelumnya. After [PRESET_CATALOG_GENERATION]
+         *   a user-deleted row is never restored.
          */
-        fun seedPlan(seededMarker: Boolean, existing: List<ReminderEntity>?): List<ReminderEntity> = when {
-            seededMarker -> emptyList()
+        fun seedPlan(
+            seededMarker: Boolean,
+            existing: List<ReminderEntity>?,
+            catalogGeneration: Int = PRESET_CATALOG_GENERATION
+        ): List<ReminderEntity> = when {
             existing == null -> emptyList()
+            existing.isEmpty() && seededMarker -> emptyList()
             existing.isEmpty() -> defaultPresets()
-            else -> emptyList()
+            catalogGeneration >= PRESET_CATALOG_GENERATION -> emptyList()
+            else -> generation2Additions().filter { candidate ->
+                existing.none { matchesCatalogIdentity(it, candidate) }
+            }
+        }
+
+        private fun generation2Additions(): List<ReminderEntity> =
+            defaultPresets().filter { row ->
+                row.reminderType == ReminderType.PRESET_AYYAMUL_BIDH ||
+                    (row.reminderType == ReminderType.PRESET_SENIN_KAMIS &&
+                        row.daysOfWeek.daysSet == setOf(7, 3))
+            }
+
+        private fun matchesCatalogIdentity(existing: ReminderEntity, catalog: ReminderEntity): Boolean {
+            if (existing.reminderType != catalog.reminderType) return false
+            if (catalog.reminderType == ReminderType.PRESET_SENIN_KAMIS) {
+                return existing.daysOfWeek.daysSet == catalog.daysOfWeek.daysSet
+            }
+            return true
         }
 
         /**
@@ -125,31 +178,36 @@ abstract class SholluDatabase : RoomDatabase() {
     }
 
     /**
-     * Seeds the default preset reminders exactly once (seeded-once marker + check-table-empty
-     * + mutex). Must be awaited BEFORE ReminderAlarmScheduler.scheduleAllActiveReminders() so
-     * enabled presets actually get alarms armed.
+     * Seeds default presets and applies catalog upgrades (mutex). Must be awaited BEFORE
+     * ReminderAlarmScheduler.scheduleAllActiveReminders() so enabled presets get alarms.
      *
-     * [preferences] supplies the seeded-once marker ([SholluPreferences.DEFAULT_PRESETS_SEEDED]):
-     * checked before seeding, written after any successful pass (including "nothing to do"
-     * passes over a populated table), including the Room onCreate callback path. On a failed
-     * table read the run ABORTS without inserting and leaves the marker unset for a retry.
+     * [preferences] supplies [SholluPreferences.DEFAULT_PRESETS_SEEDED] and
+     * [SholluPreferences.PRESET_CATALOG_GENERATION]. A seeded install with no generation key
+     * is treated as generation 1 (four-row catalog) so generation-2 rows can still land.
+     * Failed table read aborts with marker/generation unchanged.
      */
     suspend fun ensureDefaultPresets(preferences: SholluPreferences? = null) = seedMutex.withLock {
-        if (preferences?.defaultPresetsSeeded?.first() == true) return@withLock
+        val seeded = preferences?.defaultPresetsSeeded?.first() == true
+        val storedGeneration = preferences?.presetCatalogGeneration?.first() ?: 0
+        val generation = if (storedGeneration == 0 && seeded) 1 else storedGeneration
+        if (seeded && generation >= PRESET_CATALOG_GENERATION) return@withLock
         val existing: List<ReminderEntity>? = try {
             reminderDao().getAllReminders().first()
         } catch (e: Exception) {
             e.printStackTrace()
             null // read failure: unknown table state -> abort, never insert
         }
-        val toInsert = seedPlan(seededMarker = false, existing = existing)
+        val toInsert = seedPlan(
+            seededMarker = seeded,
+            existing = existing,
+            catalogGeneration = generation
+        )
         if (toInsert.isNotEmpty()) {
             reminderDao().insertReminders(toInsert)
         }
-        // Success path (table read; inserts, if any, done): mark seeded-once so later runs
-        // — and a user deleting every preset — are never re-seeded.
         if (existing != null) {
             preferences?.markDefaultPresetsSeeded()
+            preferences?.setPresetCatalogGeneration(PRESET_CATALOG_GENERATION)
         }
     }
 

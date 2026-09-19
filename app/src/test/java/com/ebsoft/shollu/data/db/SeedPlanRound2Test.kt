@@ -1,6 +1,7 @@
 package com.ebsoft.shollu.data.db
 
 import com.ebsoft.shollu.data.db.entity.ReminderEntity
+import com.ebsoft.shollu.data.db.entity.ReminderType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,8 +33,61 @@ class SeedPlanRound2Test {
     fun populatedTableNeverReseeded() {
         assertTrue(SholluDatabase.seedPlan(seededMarker = false, existing = presets).isEmpty())
         val partial = presets.take(2)
-        assertTrue(SholluDatabase.seedPlan(seededMarker = false, existing = partial).isEmpty())
+        assertTrue(
+            "generation-current + partial table: user deletions stick",
+            SholluDatabase.seedPlan(seededMarker = false, existing = partial).isEmpty()
+        )
     }
+
+    @Test
+    fun catalogGeneration1LegacyFourRowTableGainsBidhAndMalamSebelumnya() {
+        val inserted = SholluDatabase.seedPlan(
+            seededMarker = true,
+            existing = legacyV1Presets(),
+            catalogGeneration = 1
+        )
+        assertEquals(2, inserted.size)
+        assertTrue(inserted.any { it.reminderType == ReminderType.PRESET_AYYAMUL_BIDH })
+        assertTrue(
+            inserted.any {
+                it.reminderType == ReminderType.PRESET_SENIN_KAMIS &&
+                    it.daysOfWeek.daysSet == setOf(7, 3)
+            }
+        )
+        assertTrue(
+            "v1 types already in the table must not be duplicated",
+            inserted.none { it.reminderType == ReminderType.PRESET_ALKAHFI }
+        )
+    }
+
+    @Test
+    fun catalogGeneration2DoesNotRestoreUserDeletedBidh() {
+        val withoutBidh = presets.filter { it.reminderType != ReminderType.PRESET_AYYAMUL_BIDH }
+        assertTrue(
+            SholluDatabase.seedPlan(
+                seededMarker = true,
+                existing = withoutBidh,
+                catalogGeneration = SholluDatabase.PRESET_CATALOG_GENERATION
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun catalogGeneration1EmptyTableStillHonorsDeletedEverything() {
+        assertTrue(
+            SholluDatabase.seedPlan(
+                seededMarker = true,
+                existing = emptyList(),
+                catalogGeneration = 1
+            ).isEmpty()
+        )
+    }
+
+    private fun legacyV1Presets(): List<ReminderEntity> =
+        presets.filterNot {
+            it.reminderType == ReminderType.PRESET_AYYAMUL_BIDH ||
+                (it.reminderType == ReminderType.PRESET_SENIN_KAMIS && it.daysOfWeek.daysSet == setOf(7, 3))
+        }
 
     @Test
     fun failedTableReadAbortsInsteadOfInserting() {

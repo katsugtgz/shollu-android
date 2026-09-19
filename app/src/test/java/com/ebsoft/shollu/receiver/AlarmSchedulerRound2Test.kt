@@ -82,13 +82,15 @@ class AlarmSchedulerRound2Test {
         val prayerAt = LocalDateTime.of(2026, 8, 29, 11, 30)
 
         assertTrue("enabled + lead 10 min still future -> armed",
-            AlarmScheduler.shouldArmPrePrayerSlot(prayerAt, now, preEnabled = true, preMinutes = 10))
+            AlarmScheduler.shouldArmPrePrayerSlot(prayerAt, now, preEnabled = true, preMinutes = 10, isValid = true))
         assertFalse("pre-prayer alerts disabled -> cancel stale pre-alarm",
-            AlarmScheduler.shouldArmPrePrayerSlot(prayerAt, now, preEnabled = false, preMinutes = 10))
+            AlarmScheduler.shouldArmPrePrayerSlot(prayerAt, now, preEnabled = false, preMinutes = 10, isValid = true))
         assertFalse("zero minutes -> nothing to arm",
-            AlarmScheduler.shouldArmPrePrayerSlot(prayerAt, now, preEnabled = true, preMinutes = 0))
+            AlarmScheduler.shouldArmPrePrayerSlot(prayerAt, now, preEnabled = true, preMinutes = 0, isValid = true))
         assertFalse("lead instant already passed -> cancel",
-            AlarmScheduler.shouldArmPrePrayerSlot(now.plusMinutes(5), now, preEnabled = true, preMinutes = 10))
+            AlarmScheduler.shouldArmPrePrayerSlot(now.plusMinutes(5), now, preEnabled = true, preMinutes = 10, isValid = true))
+        assertFalse("polar-invalid placeholder -> never a T-minus nudge",
+            AlarmScheduler.shouldArmPrePrayerSlot(prayerAt, now, preEnabled = true, preMinutes = 10, isValid = false))
     }
 
     @Test
@@ -148,5 +150,32 @@ class AlarmSchedulerRound2Test {
         assertEquals("fabricated polar Subuh must never become the countdown target",
             PrayerType.DZUHUR, target.first)
         assertEquals(date, target.third)
+    }
+
+    // =========================================================================
+    // Exact-alarm prompt seam (Android 12+ / SDK 31)
+    // =========================================================================
+
+    @Test
+    fun needsExactAlarmPromptIsFalseOnSdk30RegardlessOfCapability() {
+        assertFalse(AlarmScheduler.needsExactAlarmPrompt(30, canScheduleExactAlarms = false))
+        assertFalse(AlarmScheduler.needsExactAlarmPrompt(30, canScheduleExactAlarms = true))
+    }
+
+    @Test
+    fun needsExactAlarmPromptIsFalseWhenSdk31CanSchedule() {
+        assertFalse(AlarmScheduler.needsExactAlarmPrompt(31, canScheduleExactAlarms = true))
+    }
+
+    @Test
+    fun needsExactAlarmPromptIsTrueWhenSdk31CannotSchedule() {
+        assertTrue(AlarmScheduler.needsExactAlarmPrompt(31, canScheduleExactAlarms = false))
+    }
+
+    @Test
+    fun shouldReshowExactAlarmPromptWhenStillDeniedAndAwaiting() {
+        assertTrue(AlarmScheduler.shouldReshowExactAlarmPrompt(stillDenied = true, awaitingGrant = true))
+        assertFalse(AlarmScheduler.shouldReshowExactAlarmPrompt(stillDenied = false, awaitingGrant = true))
+        assertFalse(AlarmScheduler.shouldReshowExactAlarmPrompt(stillDenied = true, awaitingGrant = false))
     }
 }

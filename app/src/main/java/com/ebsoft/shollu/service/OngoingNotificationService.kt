@@ -166,9 +166,10 @@ class OngoingNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Swipe and "Matikan" share one dismiss semantic: persist pref=false (else
-        // SholluApplication / BootCompletedReceiver resurrect the countdown) via the
-        // dismiss receiver, which then stops this service.
+        // "Matikan" persists pref=false (else SholluApplication / BootCompletedReceiver
+        // resurrect the countdown) via the dismiss receiver, which then stops this service.
+        // Swipe is off: chrome.ongoing + no deleteIntent (NotificationCompat.setOngoing /
+        // setDeleteIntent; FGS still startForeground + FOREGROUND_SERVICE_TYPE_SPECIAL_USE).
         val dismissIntent = Intent(this, OngoingNotificationDismissReceiver::class.java).apply {
             action = OngoingNotificationDismissReceiver.ACTION_DISMISS_ONGOING
         }
@@ -179,10 +180,10 @@ class OngoingNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val chrome = ongoingCountdownChrome()
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_prayer)
-            .setOngoing(false) // swipeable — dismissal is persisted by the dismiss receiver
-            .setDeleteIntent(dismissPendingIntent)
+            .setOngoing(chrome.ongoing)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW) // Quiet ongoing status, stays docked
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -193,6 +194,9 @@ class OngoingNotificationService : Service() {
                 "Matikan",
                 dismissPendingIntent
             )
+        if (chrome.attachSwipeDeleteIntent) {
+            builder.setDeleteIntent(dismissPendingIntent)
+        }
 
         val notification = if (USE_REMOTE_COUNTDOWN) {
             // Big self-ticking countdown: the system Chronometer counts down to the

@@ -15,8 +15,8 @@ Room DB + DataStore prefs + repositories (prayer calc cache, city seed) + pure d
 - APK self-update files → `update/AppUpdater.kt`, `update/UpdatePolicy.kt`, `update/GitHubReleaseClient.kt`, `update/PreferenceUpdateStore.kt`, `update/ApkUpdateInstaller.kt`, `update/ApkVerifier.kt`, `update/UpdateModule.kt`
 
 ## CONVENTIONS
-- `SholluDatabase.seedPlan(seededMarker, existing)` is the pure idempotency core; `ensureDefaultPresets()` is the impure wrapper (mutex + marker read/write). Change seeding logic in `seedPlan`, not the wrapper.
-- Seeded-once marker is `SholluPreferences.DEFAULT_PRESETS_SEEDED`; written on every success path including the Room `onCreate` callback and "table already populated" no-ops. Read failure → abort with marker unset (retry next run).
+- `SholluDatabase.seedPlan(seededMarker, existing, catalogGeneration)` is the pure idempotency core; `ensureDefaultPresets()` is the impure wrapper (mutex + marker + generation). Change seeding logic in `seedPlan`, not the wrapper.
+- Seeded-once marker is `SholluPreferences.DEFAULT_PRESETS_SEEDED`; catalog gen is `PRESET_CATALOG_GENERATION`. Missing gen on a seeded install = generation 1 (four-row catalog) so generation 2 (Ayyamul Bidh + malam-sebelumnya) can still insert. After generation 2, user-deleted rows stay gone. Empty table + seeded marker never inserts. Failed table read → abort, marker/gen unchanged.
 - `ReminderEntity` validates in `init {}` via `require()`: `timeHour 0..23`, `timeMinute 0..59`, `preWarningMinutes >= 0`. Constructing with bad values throws — copy-with-edit pattern is the only safe mutation.
 - `ReminderType` (5 presets + CUSTOM) and `DaysOfWeek` live in `ReminderEntity.kt`, not separate files. `DaysOfWeek` is a value object over `rawValue: String` — `"*"` (everyday), `"ONCE"`, or CSV `"1,4"` (1=Mon…7=Sun; out-of-range dropped in `daysSet`).
 - `model/Reminder.kt` is `typealias Reminder = ReminderEntity` — one shape everywhere, no mapper.
@@ -52,7 +52,7 @@ Done when check, cache, and install all hold:
 
 ## NOTES
 - DB is version 1, `fallbackToDestructiveMigration()` (no migrations written; a schema bump wipes user reminders — prefs survive in DataStore).
-- `defaultPresets()` seeds 4 presets; `PRESET_AYYAMUL_BIDH` exists in the enum but is never auto-seeded.
-- Tahajjud preset ships `isEnabled = false`; the other three are enabled and must be seeded before `ReminderAlarmScheduler` arms alarms.
+- `defaultPresets()` seeds 6 rows: Al-Kahfi, Dhuha, two SENIN_KAMIS (sahur 03:30 Mon/Thu + malam sebelumnya 20:00 Sun/Wed), AYYAMUL_BIDH (Hijri 13–15 via `nextPresetInstant`), TAHAJJUD enabled (Subuh−45).
+- All six ship `isEnabled = true` and must be seeded before `ReminderAlarmScheduler` arms alarms.
 - `PrayerTimes.getNextPrayerTarget(now, tomorrow)` is the single next-prayer selector (polar-aware). Pass the real next-day instance for the correct post-Isya rollover time — omitting it reuses today's schedule for tomorrow's dawn.
 - `CalculationMethod`: 10 methods; UMM_AL_QURA + QATAR use `ishaIntervalMin=90` with `ishaAngle=0`; `defaultIhtiyatMin` is per-method (KEMENAG_RI 2, MUIS 1, rest 0).

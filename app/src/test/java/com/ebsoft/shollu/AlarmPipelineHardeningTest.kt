@@ -289,7 +289,7 @@ class AlarmPipelineHardeningTest {
     @Test
     fun testDefaultPresetsSeededExactlyOnce() {
         val firstCall = SholluDatabase.presetsToInsert(emptyList())
-        assertEquals("Fresh install must seed all presets", 4, firstCall.size)
+        assertEquals("Fresh install must seed all presets", 6, firstCall.size)
 
         // Second call: table already populated -> nothing inserted
         val secondCall = SholluDatabase.presetsToInsert(SholluDatabase.defaultPresets())
@@ -303,7 +303,7 @@ class AlarmPipelineHardeningTest {
     @Test
     fun testEnabledDefaultPresetsExistAndArmInTheFuture() {
         val enabled = SholluDatabase.defaultPresets().filter { it.isEnabled }
-        assertEquals("Al-Kahfi, Senin-Kamis and Dhuha presets must be enabled by default", 3, enabled.size)
+        assertEquals("Al-Kahfi, two Senin-Kamis, Ayyamul Bidh, Tahajjud and Dhuha presets must be enabled by default", 6, enabled.size)
 
         val now = LocalDateTime.of(2026, 8, 29, 10, 0) // Saturday
         for (preset in enabled) {
@@ -761,6 +761,43 @@ class AlarmPipelineHardeningTest {
             AlarmScheduler.shouldSkipArm(identical, identical))
         assertFalse("no persisted reminder fingerprint must never skip",
             AlarmScheduler.shouldSkipArm(null, identical))
+
+        assertTrue("v3 fingerprint must not match a v2 persisted value", identical.startsWith("v3|"))
+        assertNotEquals(
+            "calculation method must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, calculationMethod = CalculationMethod.ISNA
+            )
+        )
+        assertNotEquals(
+            "juristic must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, juristic = AsrJuristic.HANAFI
+            )
+        )
+        assertNotEquals(
+            "ihtiyat must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, ihtiyatMinutes = 5
+            )
+        )
+        assertNotEquals(
+            "city latitude must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, cityLatitude = -6.2088
+            )
+        )
+        assertNotEquals(
+            "city longitude must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, cityLongitude = 106.8456
+            )
+        )
     }
 
     // =========================================================================
@@ -887,7 +924,10 @@ class AlarmPipelineHardeningTest {
                     "cancel:$mainCode"
                 }
                 val preCode = AlarmScheduler.getRequestCode(date, type, isPrePrayer = true)
-                ops += if (AlarmScheduler.shouldArmPrePrayerSlot(wall, snapshot.now, snapshot.preEnabled, snapshot.preMinutes)) {
+                ops += if (AlarmScheduler.shouldArmPrePrayerSlot(
+                        wall, snapshot.now, snapshot.preEnabled, snapshot.preMinutes,
+                        AlarmScheduler.isPrayerValid(type, fixedTimes())
+                    )) {
                     "arm:$preCode"
                 } else {
                     "cancel:$preCode"

@@ -27,17 +27,15 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 try {
                     val preferences = SholluPreferences(context)
 
-                    // 0. GPS city timezone re-derivation: the stored offset is a one-time DST
-                    //    snapshot of the device zone at selection time. Only ACTION_TIMEZONE_CHANGED
-                    //    changes that offset (ACTION_TIME_CHANGED never does); fixed-list cities
-                    //    are never touched. Re-derive BEFORE rescheduling so alarms arm in the
-                    //    corrected frame.
+                    // 0. GPS city timezone re-derivation: offset is GpsOffset(lat, lon).
+                    //    Only ACTION_TIMEZONE_CHANGED (ACTION_TIME_CHANGED never does);
+                    //    fixed-list cities are never touched. Re-derive BEFORE rescheduling.
                     val isGpsCity = preferences.isSelectedCityGps.first()
                     if (AlarmTime.shouldRederiveGpsTimezone(action, isGpsCity)) {
                         val city = preferences.selectedCity.first()
-                        val newOffsetHours = com.ebsoft.shollu.engine.AstroCalculator.currentOffsetHours(
-                            java.util.TimeZone.getDefault().id,
-                            System.currentTimeMillis()
+                        val newOffsetHours = com.ebsoft.shollu.engine.GpsOffset.offsetHours(
+                            city.latitude,
+                            city.longitude
                         )
                         preferences.updateCity(
                             AlarmTime.rederiveGpsTimezone(city, newOffsetHours),
