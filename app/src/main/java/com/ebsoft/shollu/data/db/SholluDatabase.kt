@@ -148,6 +148,10 @@ abstract class SholluDatabase : RoomDatabase() {
             existing == null -> emptyList()
             existing.isEmpty() && seededMarker -> emptyList()
             existing.isEmpty() -> defaultPresets()
+            // Unseeded + non-empty: user (or a failed first seed) already has rows.
+            // Never treat that as a gen-2 upgrade — that would insert only Bidh +
+            // malam-sebelumnya, stamp generation 2, and skip the original four forever.
+            !seededMarker -> emptyList()
             catalogGeneration >= PRESET_CATALOG_GENERATION -> emptyList()
             else -> generation2Additions().filter { candidate ->
                 existing.none { matchesCatalogIdentity(it, candidate) }

@@ -90,6 +90,26 @@ class SeedPlanRound2Test {
         }
 
     @Test
+    fun unseededNonEmptyTableDoesNotApplyGeneration2Upgrade() {
+        val custom = listOf(
+            ReminderEntity(
+                title = "Custom",
+                timeHour = 6,
+                timeMinute = 0,
+                reminderType = ReminderType.CUSTOM
+            )
+        )
+        assertTrue(
+            "unseeded + existing rows + gen 0 must not insert only Bidh/malam-sebelumnya",
+            SholluDatabase.seedPlan(
+                seededMarker = false,
+                existing = custom,
+                catalogGeneration = 0
+            ).isEmpty()
+        )
+    }
+
+    @Test
     fun failedTableReadAbortsInsteadOfInserting() {
         // Transient DB error maps to null: unknown state -> MUST NOT insert (would duplicate).
         assertTrue(SholluDatabase.seedPlan(seededMarker = false, existing = null).isEmpty())

@@ -23,20 +23,22 @@ object ScheduleShare {
         monthLabel: String,
         tableLines: List<List<String>>
     ): ScheduleSharePayload {
+        val city = cityName.htmlEscaped()
+        val month = monthLabel.htmlEscaped()
         val html = buildString {
-            appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Jadwal Sholat $cityName - $monthLabel</title>")
+            appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Jadwal Sholat $city - $month</title>")
             appendLine("<style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:8px;text-align:center;} th{background:#0D6A53;color:#fff;}</style></head><body>")
-            appendLine("<h2>Jadwal Waktu Sholat $cityName - $monthLabel</h2>")
+            appendLine("<h2>Jadwal Waktu Sholat $city - $month</h2>")
             appendLine("<p>Dihitung menggunakan software Shollu (Ebsoft Algorithm)</p>")
             append("<table><tr>")
             for (header in headers) {
-                append("<th>$header</th>")
+                append("<th>${header.htmlEscaped()}</th>")
             }
             appendLine("</tr>")
             for (row in tableLines) {
                 append("<tr>")
                 for (cell in row) {
-                    append("<td>$cell</td>")
+                    append("<td>${cell.htmlEscaped()}</td>")
                 }
                 appendLine("</tr>")
             }
@@ -55,5 +57,18 @@ object ScheduleShare {
             plain = plain,
             mimeType = "text/plain"
         )
+    }
+
+    internal fun String.htmlEscaped(): String = buildString(length) {
+        for (ch in this@htmlEscaped) {
+            when (ch) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                '\'' -> append("&#39;")
+                else -> append(ch)
+            }
+        }
     }
 }

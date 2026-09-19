@@ -41,10 +41,12 @@ object ReminderAlarmScheduler {
      * titles/descriptions containing ':' or ';' used to be able to collide.
      * v3: calculationMethod + juristic + ihtiyat + city lat/lon — Tahajjud is Subuh−45,
      * so a hisab/city change must kill skip-if-unchanged even when reminder rows are identical.
+     * v4: reminderType per row, customOffsets (Subuh offset moves Tahajjud), hijriAdjustment
+     * (Ayyamul Bidh civil dates).
      */
-    private const val FINGERPRINT_VERSION = "v3"
+    private const val FINGERPRINT_VERSION = "v4"
 
-    private const val TAHAJJUD_LEAD_MINUTES = 45L
+    internal const val TAHAJJUD_LEAD_MINUTES = 45L
     private const val AYYAMUL_BIDH_SCAN_DAYS = 45
 
     /**
@@ -121,11 +123,16 @@ object ReminderAlarmScheduler {
     fun nextPresetInstant(
         reminder: ReminderEntity,
         now: LocalDateTime,
+        hijriAdjustment: Int = 0,
+        hijriForDate: (LocalDate, Int) -> com.ebsoft.shollu.data.model.HijriDate =
+            { date, adj -> HijriCalendarHelper.gregorianToHijri(date, adj) },
         subuhForDate: (LocalDate) -> LocalTime?
     ): LocalDateTime? = when (reminder.reminderType) {
         ReminderType.PRESET_TAHAJJUD -> {
             val today = now.toLocalDate()
-            for (offset in 0L..1L) {
+            // Subuh−45 can land on the previous civil date; scan through offset 2 so a
+            // late-night run still finds the next occurrence when Subuh is before 00:45.
+            for (offset in 0L..2L) {
                 val date = today.plusDays(offset)
                 val subuh = subuhForDate(date) ?: continue
                 val instant = LocalDateTime.of(date, subuh).minusMinutes(TAHAJJUD_LEAD_MINUTES)
@@ -137,7 +144,7 @@ object ReminderAlarmScheduler {
             val today = now.toLocalDate()
             for (offset in 0 until AYYAMUL_BIDH_SCAN_DAYS) {
                 val date = today.plusDays(offset.toLong())
-                val hijri = HijriCalendarHelper.gregorianToHijri(date)
+                val hijri = hijriForDate(date, hijriAdjustment)
                 if (!HijriCalendarHelper.isAyyamulBidh(hijri)) continue
                 val instant = date.atTime(reminder.timeHour, reminder.timeMinute, 0)
                 if (instant.isAfter(now)) return instant
@@ -166,14 +173,12 @@ object ReminderAlarmScheduler {
     /**
      * Fingerprint of every input the batch arm derives reminder instants from: the city's
      * fixed offset (epoch conversion + the "now" frame), hisab inputs that move Tahajjud
-     * (calculation method, Asr juristic, ihtiyat, city lat/lon), the full set of active
-     * reminder rows (trigger fields AND intent extras — title/description/isMaxVibration
-     * ride the armed PendingIntent), and the city-frame day the next occurrence is computed
-     * on (guarantees at least one real sweep per day, bounding the damage of a post-fire
-     * re-arm killed mid-goAsync). Rows are folded id-sorted so the DAO's return order
-     * cannot matter. A persisted fingerprint equal to the computed one lets the cold-start
-     * path ([scheduleAllActiveReminders]'s skipIfUnchanged) skip the sweep with zero
-     * AlarmManager IPCs — see AlarmScheduler.armingFingerprint for the prayer twin.
+     * (calculation method, Asr juristic, ihtiyat, customOffsets, city lat/lon), hijriAdjustment
+     * (Ayyamul Bidh civil dates), the full set of active reminder rows (trigger fields,
+     * reminderType, AND intent extras — title/description/isMaxVibration ride the armed
+     * PendingIntent), and the city-frame day the next occurrence is computed on (guarantees
+     * at least one real sweep per day, bounding the damage of a post-fire re-arm killed
+     * mid-goAsync). Rows are folded id-sorted so the DAO's return order cannot matter.
      */
     fun armingFingerprint(
         reminders: List<ReminderEntity>,
@@ -183,7 +188,9 @@ object ReminderAlarmScheduler {
         juristic: AsrJuristic = AsrJuristic.STANDARD,
         ihtiyatMinutes: Int = 2,
         cityLatitude: Double = 0.0,
-        cityLongitude: Double = 0.0
+        cityLongitude: Double = 0.0,
+        offsets: Map<String, Int> = emptyMap(),
+        hijriAdjustment: Int = 0
     ): String = listOf(
         FINGERPRINT_VERSION,
         timezoneHours.toString(),
@@ -193,13 +200,15 @@ object ReminderAlarmScheduler {
         ihtiyatMinutes.toString(),
         cityLatitude.toString(),
         cityLongitude.toString(),
+        offsets.keys.sorted().joinToString(",") { "${it}=${offsets[it]}" },
+        hijriAdjustment.toString(),
         // Free-text fields (rawValue/title/description) are length-prefixed so user text
         // containing ':' or ';' cannot collide two different rows into one fingerprint
         // (see AlarmScheduler.fingerprintField); numeric/boolean fields are separator-free.
         reminders.sortedBy { it.id }.joinToString(";") { r ->
             "${r.id}:${r.timeHour}:${r.timeMinute}:" +
                 "${AlarmScheduler.fingerprintField(r.daysOfWeek.rawValue)}:" +
-                "${r.isEnabled}:${r.isMaxVibration}:" +
+                "${r.isEnabled}:${r.isMaxVibration}:${r.reminderType.name}:" +
                 "${AlarmScheduler.fingerprintField(r.title)}:${AlarmScheduler.fingerprintField(r.description)}"
         }
     ).joinToString("|")
@@ -254,6 +263,7 @@ object ReminderAlarmScheduler {
             val juristic = preferences.asrJuristic.first()
             val ihtiyat = preferences.ihtiyatMinutes.first()
             val offsets = preferences.customOffsets.first()
+            val hijriAdjustment = preferences.hijriAdjustment.first()
             val timezoneHours = city.timezone
             val cityNow = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
             val prayerRepository = PrayerRepository(preferences)
@@ -276,7 +286,9 @@ object ReminderAlarmScheduler {
                 juristic,
                 ihtiyat,
                 city.latitude,
-                city.longitude
+                city.longitude,
+                offsets,
+                hijriAdjustment
             )
             val persistedFingerprint = if (skipIfUnchanged) preferences.reminderArmFingerprint.first() else null
             if (!reschedulingAfterBoot &&
@@ -293,7 +305,7 @@ object ReminderAlarmScheduler {
                     cancelReminderLocked(context, reminder.id)
                     continue
                 }
-                scheduleReminderLocked(context, reminder, timezoneHours, subuhForDate)
+                scheduleReminderLocked(context, reminder, timezoneHours, subuhForDate, hijriAdjustment)
             }
 
             // Persist only AFTER a completed batch — the skip return above and a mid-batch
@@ -323,6 +335,7 @@ object ReminderAlarmScheduler {
             val juristic = preferences.asrJuristic.first()
             val ihtiyat = preferences.ihtiyatMinutes.first()
             val offsets = preferences.customOffsets.first()
+            val hijriAdjustment = preferences.hijriAdjustment.first()
             val prayerRepository = PrayerRepository(preferences)
             val subuhForDate: (LocalDate) -> LocalTime? = { date ->
                 val times = prayerRepository.calculateForDate(
@@ -330,7 +343,7 @@ object ReminderAlarmScheduler {
                 )
                 times.subuh.takeIf { times.isSubuhValid }
             }
-            scheduleReminderLocked(context, reminder, city.timezone, subuhForDate)
+            scheduleReminderLocked(context, reminder, city.timezone, subuhForDate, hijriAdjustment)
         }
     }
 
@@ -360,7 +373,8 @@ object ReminderAlarmScheduler {
         context: Context,
         reminder: ReminderEntity,
         timezoneHours: Double,
-        subuhForDate: (LocalDate) -> LocalTime?
+        subuhForDate: (LocalDate) -> LocalTime?,
+        hijriAdjustment: Int
     ) {
         if (!reminder.isEnabled) {
             cancelReminderLocked(context, reminder.id)
@@ -368,7 +382,12 @@ object ReminderAlarmScheduler {
         }
 
         val now = AlarmTime.cityWallClockNow(timezoneHours = timezoneHours)
-        val triggerDateTime = nextPresetInstant(reminder, now, subuhForDate)
+        val triggerDateTime = nextPresetInstant(
+            reminder,
+            now,
+            hijriAdjustment = hijriAdjustment,
+            subuhForDate = subuhForDate
+        )
         if (triggerDateTime == null) {
             cancelReminderLocked(context, reminder.id)
             return

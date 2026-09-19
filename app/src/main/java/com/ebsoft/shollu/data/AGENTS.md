@@ -52,7 +52,7 @@ Done when check, cache, and install all hold:
 
 ## NOTES
 - DB is version 1, `fallbackToDestructiveMigration()` (no migrations written; a schema bump wipes user reminders — prefs survive in DataStore).
-- `defaultPresets()` seeds 6 rows: Al-Kahfi, Dhuha, two SENIN_KAMIS (sahur 03:30 Mon/Thu + malam sebelumnya 20:00 Sun/Wed), AYYAMUL_BIDH (Hijri 13–15 via `nextPresetInstant`), TAHAJJUD enabled (Subuh−45).
+- `defaultPresets()` seeds 6 rows: Al-Kahfi, Dhuha, two SENIN_KAMIS (sahur 03:30 Mon/Thu + malam sebelumnya 20:00 Sun/Wed), AYYAMUL_BIDH (Hijri 13–15 via `nextPresetInstant` + user `hijriAdjustment`), TAHAJJUD enabled (Subuh−45). Catalog generation 2 upgrades seeded v1 installs; unseeded non-empty tables are never treated as a gen-2 upgrade.
 - All six ship `isEnabled = true` and must be seeded before `ReminderAlarmScheduler` arms alarms.
 - `PrayerTimes.getNextPrayerTarget(now, tomorrow)` is the single next-prayer selector (polar-aware). Pass the real next-day instance for the correct post-Isya rollover time — omitting it reuses today's schedule for tomorrow's dawn.
 - `CalculationMethod`: 10 methods; UMM_AL_QURA + QATAR use `ishaIntervalMin=90` with `ishaAngle=0`; `defaultIhtiyatMin` is per-method (KEMENAG_RI 2, MUIS 1, rest 0).

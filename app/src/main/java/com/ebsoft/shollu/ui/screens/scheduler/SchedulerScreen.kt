@@ -216,7 +216,7 @@ private fun ReminderItemCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = if (reminder.reminderType == ReminderType.PRESET_TAHAJJUD) {
-                            "$formattedTime $timezoneLabel"
+                            formattedTime
                         } else {
                             "Pukul $formattedTime $timezoneLabel"
                         },
@@ -308,15 +308,16 @@ private fun AddReminderDialog(
             }
         },
         confirmButton = {
+            val draft = CustomReminderDraft(
+                title = title,
+                description = desc,
+                hour = hourField.value,
+                minute = minuteField.value,
+                once = once
+            )
             Button(
+                enabled = draft.isSavable(),
                 onClick = {
-                    val draft = CustomReminderDraft(
-                        title = title,
-                        description = desc,
-                        hour = hourField.value,
-                        minute = minuteField.value,
-                        once = once
-                    )
                     if (draft.isSavable()) {
                         onSave(
                             draft.title,

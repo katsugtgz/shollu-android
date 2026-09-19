@@ -60,6 +60,30 @@ class CustomReminderDraftTest {
     }
 
     @Test
+    fun testMinute60NotSavable() {
+        val draft = CustomReminderDraft(
+            title = "Wirid",
+            description = "",
+            hour = 6,
+            minute = 60,
+            once = false
+        )
+        assertFalse(draft.isSavable())
+    }
+
+    @Test
+    fun testNegativeHourNotSavable() {
+        val draft = CustomReminderDraft(
+            title = "Wirid",
+            description = "",
+            hour = -1,
+            minute = 0,
+            once = false
+        )
+        assertFalse(draft.isSavable())
+    }
+
+    @Test
     fun testValidEverydayDraftIsSavable() {
         val draft = CustomReminderDraft(
             title = "Wirid",

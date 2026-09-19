@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-40 JVM-only `*Test.kt` files, 258 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
+41 JVM-only `*Test.kt` files, 280 `@Test` methods: pure-JUnit-4 asserts against seam interfaces — no Android runtime, no Mockk/Robolectric/Truth/Mockito, no mocks at all (fakes only).
 
 ## WHERE TO LOOK
 

@@ -269,6 +269,14 @@ class OngoingNotificationService : Service() {
     }
 
     override fun onDestroy() {
+        countdownJob?.cancel()
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {
+            // Already torn down, or never started as FGS.
+        }
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .cancel(NOTIFICATION_ID)
         serviceScope.cancel()
         super.onDestroy()
     }

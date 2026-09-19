@@ -23,7 +23,21 @@ class ScheduleShareTest {
         assertTrue(payload.plain.contains("04:38"))
         assertTrue(payload.plain.contains("Jadwal Sholat Jakarta - Agustus 2026"))
         assertTrue(payload.html.contains("<table"))
+        assertTrue(payload.html.contains("<td>04:38</td>"))
         assertEquals("Jadwal Sholat Jakarta - Agustus 2026", payload.subject)
         assertEquals("text/plain", payload.mimeType)
+    }
+
+    @Test
+    fun testHtmlEscapesCityNameMarkup() {
+        val payload = ScheduleShare.build(
+            cityName = "Jakarta & <Hack>",
+            monthLabel = "Agustus \"2026\"",
+            tableLines = listOf(listOf("1", "04:28"))
+        )
+        assertTrue(payload.html.contains("Jakarta &amp; &lt;Hack&gt;"))
+        assertTrue(payload.html.contains("Agustus &quot;2026&quot;"))
+        assertTrue("plain text keeps the raw city name", payload.plain.contains("Jakarta & <Hack>"))
+        assertTrue("subject is not HTML", payload.subject.contains("Jakarta & <Hack>"))
     }
 }

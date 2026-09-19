@@ -5,9 +5,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Seam: [ongoingCountdownChrome] — README docked shade bar is non-swipeable
- * (`setOngoing(true)`); swipe deleteIntent stays off. Matikan action is
- * wired in [OngoingNotificationService], not this chrome.
+ * Seam: [ongoingCountdownChrome] pins the chrome constants the service applies
+ * (`setOngoing` / swipe deleteIntent). JVM suite cannot bind NotificationCompat;
+ * Matikan + onDestroy cancel live in [OngoingNotificationService].
  */
 class OngoingCountdownChromeTest {
 

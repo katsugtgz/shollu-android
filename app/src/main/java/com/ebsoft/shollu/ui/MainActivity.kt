@@ -333,6 +333,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         val stillDenied = needsExactAlarmPromptNow()
+        if (stillDenied) awaitingExactAlarmGrant = true
         if (AlarmScheduler.shouldReshowExactAlarmPrompt(stillDenied, awaitingExactAlarmGrant)) {
             showExactAlarmPrompt = true
             return
@@ -539,7 +540,16 @@ class MainActivity : ComponentActivity() {
             val finalCityName = locality ?: "GPS (${String.format(Locale.US, "%.4f, %.4f", location.latitude, location.longitude)})"
             val finalCountry = if (countryName.isNotBlank()) countryName else "Koordinat GPS"
 
-            val tz = GpsOffset.offsetHours(location.latitude, location.longitude)
+            val fallbackHours = com.ebsoft.shollu.engine.AstroCalculator.currentOffsetHours(
+                java.util.TimeZone.getDefault().id,
+                System.currentTimeMillis()
+            )
+            val tz = GpsOffset.offsetHours(
+                location.latitude,
+                location.longitude,
+                fallbackHours,
+                finalCountry
+            )
 
             val gpsCity = City(
                 name = finalCityName,

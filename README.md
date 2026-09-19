@@ -87,7 +87,7 @@
 
 - **Domain Isolation**: Prayer math, GPS offset bands, and Hijri arithmetic in `engine/` stay Android-free. Qibla compass helpers import `SensorManager`.
 - **Deep Seams**: Repositories expose Flow interfaces; prefs are concrete `SholluPreferences` (no ViewModel).
-- **Robustness**: JVM suite — 40 `*Test.kt` files, 258 `@Test` methods, 5 numbered adversarial vectors (polar, midnight rollover, request codes). Doze itself is not simulated on the JVM.
+- **Robustness**: JVM suite — 41 `*Test.kt` files, 280 `@Test` methods, 5 numbered adversarial vectors (polar, midnight rollover, request codes). Doze itself is not simulated on the JVM.
 
 ---
 
