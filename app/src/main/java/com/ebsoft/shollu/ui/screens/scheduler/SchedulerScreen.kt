@@ -20,6 +20,7 @@ import com.ebsoft.shollu.data.db.entity.ReminderType
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.repository.IReminderRepository
 import com.ebsoft.shollu.receiver.AlarmTime
+import com.ebsoft.shollu.ui.theme.ConnectedExclusiveToggleRow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -155,7 +156,7 @@ private fun ReminderItemCard(
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
-    val formattedTime = String.format("%02d:%02d", reminder.timeHour, reminder.timeMinute)
+    val formattedTime = reminderClockLabel(reminder)
     val isPreset = reminder.reminderType.isPreset
 
     Card(
@@ -214,7 +215,11 @@ private fun ReminderItemCard(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Pukul $formattedTime $timezoneLabel",
+                        text = if (reminder.reminderType == ReminderType.PRESET_TAHAJJUD) {
+                            formattedTime
+                        } else {
+                            "Pukul $formattedTime $timezoneLabel"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
                         color = if (reminder.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -249,8 +254,10 @@ private fun AddReminderDialog(
 ) {
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
+    var once by remember { mutableStateOf(false) }
     val hourField = remember { TimeFieldState(maxValue = 23, initialText = "06") }
     val minuteField = remember { TimeFieldState(maxValue = 59, initialText = "00") }
+    val repeatChoices = remember { listOf(false, true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -291,13 +298,34 @@ private fun AddReminderDialog(
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                ConnectedExclusiveToggleRow(
+                    items = repeatChoices,
+                    selected = once,
+                    onSelect = { once = it },
+                    label = { isOnce -> if (isOnce) "Sekali saja" else "Setiap hari" }
+                )
             }
         },
         confirmButton = {
             Button(
+                enabled = title.isNotBlank(),
                 onClick = {
-                    if (title.isNotBlank()) {
-                        onSave(title, desc, hourField.value, minuteField.value, "*")
+                    val draft = CustomReminderDraft(
+                        title = title,
+                        description = desc,
+                        hour = hourField.value,
+                        minute = minuteField.value,
+                        once = once
+                    )
+                    if (draft.isSavable()) {
+                        onSave(
+                            draft.title,
+                            draft.description,
+                            draft.hour,
+                            draft.minute,
+                            draft.daysRaw()
+                        )
                     }
                 }
             ) {

@@ -1,5 +1,6 @@
 package com.ebsoft.shollu.ui.screens.settings
 
+import com.ebsoft.shollu.data.model.AsrJuristic
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
 import kotlinx.coroutines.CompletableDeferred
@@ -33,6 +34,7 @@ class SettingsActionsTest {
     /** Mutable mirror of the DataStore keys the matrix writes, for clamping assertions. */
     private class FakePrefs {
         var calculationMethod: CalculationMethod? = null
+        var asr: AsrJuristic? = null
         var ihtiyatMinutes: Int? = null
         var hijriAdjustment: Int? = null
         var prePrayerEnabled: Boolean? = null
@@ -61,6 +63,11 @@ class SettingsActionsTest {
                 override suspend fun updateCalculationMethod(method: CalculationMethod) {
                     prefs.calculationMethod = method
                     recorder.write("method=${method.name}")
+                }
+
+                override suspend fun updateAsrJuristic(juristic: AsrJuristic) {
+                    prefs.asr = juristic
+                    recorder.write("asr:${juristic.name}")
                 }
 
                 // Mirrors the DataStore edit transform: atomic persisted RMW, clamped.
@@ -122,6 +129,16 @@ class SettingsActionsTest {
         h.actions.setCalculationMethod(CalculationMethod.EGYPTIAN)
         assertEquals(CalculationMethod.EGYPTIAN, h.prefs.calculationMethod)
         assertEquals(listOf("write:method=EGYPTIAN", "reschedule", "widget"), h.recorder.events)
+    }
+
+    // ---- Asr Juristic: write + reschedule + widget (same lane style as metode hisab) ----
+
+    @Test
+    fun testAsrJuristicChangeWritesReschedulesAndRefreshesWidget() = runTest {
+        val h = Harness()
+        h.actions.setAsrJuristic(AsrJuristic.HANAFI)
+        assertEquals(AsrJuristic.HANAFI, h.prefs.asr)
+        assertEquals(listOf("write:asr:HANAFI", "reschedule", "widget"), h.recorder.events)
     }
 
     // ---- Ihtiyat stepper: clamped 0..10, write + reschedule + widget (widget is NEW) ----

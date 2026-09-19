@@ -1,6 +1,7 @@
 package com.ebsoft.shollu.ui
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -28,7 +29,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.City
-import com.ebsoft.shollu.engine.AstroCalculator
+import com.ebsoft.shollu.engine.GpsOffset
 import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.receiver.ReminderAlarmScheduler
 import com.ebsoft.shollu.ui.navigation.Screen
@@ -46,7 +47,6 @@ import com.ebsoft.shollu.data.update.UpdateOffer
 import com.ebsoft.shollu.ui.update.UpdatePromptDialog
 import android.location.LocationManager
 import com.google.android.gms.location.Priority
-import java.util.TimeZone
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.Dispatchers
@@ -57,12 +57,14 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var fusedLocationClient: FusedLocationProviderClient? = null
 
     private var pendingUnknownSourcesOffer: UpdateOffer? = null
     private var updateOffer by mutableStateOf<UpdateOffer?>(null)
     private var updateProgress by mutableStateOf<Float?>(null)
     private var updateError by mutableStateOf<String?>(null)
+    private var showExactAlarmPrompt by mutableStateOf(false)
+    private var awaitingExactAlarmGrant = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -89,8 +91,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         requestAppPermissions()
+        if (needsExactAlarmPromptNow()) {
+            showExactAlarmPrompt = true
+            awaitingExactAlarmGrant = true
+        }
 
         val app = application as SholluApplication
         val preferences = app.preferences
@@ -299,7 +304,46 @@ class MainActivity : ComponentActivity() {
                             onUpdate = { startUpdateInstall(offer) }
                         )
                     }
+
+                    if (showExactAlarmPrompt) {
+                        AlertDialog(
+                            onDismissRequest = { showExactAlarmPrompt = false },
+                            title = { Text("Izin alarm tepat", fontWeight = FontWeight.Bold) },
+                            text = {
+                                Text("Shollu memerlukan izin alarm tepat agar pengingat sholat berbunyi pada waktunya.")
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showExactAlarmPrompt = false
+                                    requestExactAlarmPermission()
+                                }) { Text("Izinkan") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showExactAlarmPrompt = false }) {
+                                    Text("Nanti")
+                                }
+                            }
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val stillDenied = needsExactAlarmPromptNow()
+        if (stillDenied) awaitingExactAlarmGrant = true
+        if (AlarmScheduler.shouldReshowExactAlarmPrompt(stillDenied, awaitingExactAlarmGrant)) {
+            showExactAlarmPrompt = true
+            return
+        }
+        if (awaitingExactAlarmGrant && !stillDenied) {
+            awaitingExactAlarmGrant = false
+            val app = application as SholluApplication
+            app.applicationScope.launch(Dispatchers.IO) {
+                AlarmScheduler.scheduleNextPrayerAlarms(this@MainActivity)
+                ReminderAlarmScheduler.scheduleAllActiveReminders(this@MainActivity)
             }
         }
     }
@@ -363,6 +407,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun needsExactAlarmPromptNow(): Boolean {
+        val canSchedule = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true
+        }
+        return AlarmScheduler.needsExactAlarmPrompt(Build.VERSION.SDK_INT, canSchedule)
+    }
+
+    private fun requestExactAlarmPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        startActivity(
+            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:$packageName")
+            }
+        )
+    }
+
     private fun autoDetectLocation() {
         val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -372,8 +435,11 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        val client = LocationServices.getFusedLocationProviderClient(this)
+        fusedLocationClient = client
+
         try {
-            fusedLocationClient.lastLocation
+            client.lastLocation
                 .addOnSuccessListener { location: Location? ->
                     if (location != null) {
                         processLocation(location)
@@ -393,9 +459,10 @@ class MainActivity : ComponentActivity() {
         val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fineGranted && !coarseGranted) return
+        val client = fusedLocationClient ?: return
 
         try {
-            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
+            client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
                 .addOnSuccessListener { location: Location? ->
                     if (location != null) {
                         processLocation(location)
@@ -473,11 +540,12 @@ class MainActivity : ComponentActivity() {
             val finalCityName = locality ?: "GPS (${String.format(Locale.US, "%.4f, %.4f", location.latitude, location.longitude)})"
             val finalCountry = if (countryName.isNotBlank()) countryName else "Koordinat GPS"
 
-            // Calculate timezone from the zone's CURRENT offset (DST-aware),
-            // not the fixed rawOffset which is wrong half the year in DST zones.
-            val tz = AstroCalculator.currentOffsetHours(
-                TimeZone.getDefault().id,
-                System.currentTimeMillis()
+            val fallbackHours = GpsOffset.deviceFallbackHours()
+            val tz = GpsOffset.offsetHours(
+                location.latitude,
+                location.longitude,
+                fallbackHours,
+                finalCountry
             )
 
             val gpsCity = City(
@@ -490,8 +558,7 @@ class MainActivity : ComponentActivity() {
                 timezone = tz
             )
 
-            // isGps = true: the stored timezone is a DST snapshot of the device offset and
-            // must be re-derived on ACTION_TIMEZONE_CHANGED (see BootCompletedReceiver).
+            // isGps = true: offset from coordinates via GpsOffset; re-derive on TIMEZONE_CHANGED.
             app.preferences.updateCity(gpsCity, isGps = true)
             AlarmScheduler.scheduleNextPrayerAlarms(this@MainActivity)
             // Reminders are armed in the city's offset — re-arm them in the new frame.

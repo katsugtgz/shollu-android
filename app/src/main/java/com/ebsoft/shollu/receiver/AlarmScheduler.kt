@@ -123,16 +123,19 @@ object AlarmScheduler {
         isValid && prayerDateTime.isAfter(now)
 
     /**
-     * Arm decision for a slot's pre-prayer alarm (pure): enabled, non-zero lead, and the
-     * pre-prayer instant itself still in the future.
+     * Arm decision for a slot's pre-prayer alarm (pure): polar-valid, enabled, non-zero lead,
+     * and the pre-prayer instant itself still in the future. Invalid Subuh/Isya placeholders
+     * are LocalTime.MIDNIGHT — a T-10 nudge at 23:50 would fire with no matching main alarm.
      */
     fun shouldArmPrePrayerSlot(
         prayerDateTime: LocalDateTime,
         now: LocalDateTime,
         preEnabled: Boolean,
-        preMinutes: Int
+        preMinutes: Int,
+        isValid: Boolean
     ): Boolean =
-        preEnabled && preMinutes > 0 && prayerDateTime.minusMinutes(preMinutes.toLong()).isAfter(now)
+        isValid && preEnabled && preMinutes > 0 &&
+            prayerDateTime.minusMinutes(preMinutes.toLong()).isAfter(now)
 
     /**
      * After-Isya / midnight rollover target (pure): the first VALID major prayer of the new
@@ -205,6 +208,22 @@ object AlarmScheduler {
         prePrayerMinutes.toString(),
         windowStart.toEpochDay().toString()
     ).joinToString("|")
+
+    /**
+     * Whether the UI must send the user to the exact-alarm permission screen.
+     * Android 12+ (SDK 31) introduced [AlarmManager.canScheduleExactAlarms]; below that
+     * the capability is implicit.
+     */
+    fun needsExactAlarmPrompt(sdkInt: Int, canScheduleExactAlarms: Boolean): Boolean =
+        sdkInt >= 31 && !canScheduleExactAlarms
+
+    /**
+     * After Nanti/dismiss the dialog hides, but [awaitingGrant] stays true until the user
+     * actually has exact-alarm capability. Next Activity resume must show the dialog again
+     * while still denied so Nanti is not a silent skip for the rest of the session.
+     */
+    fun shouldReshowExactAlarmPrompt(stillDenied: Boolean, awaitingGrant: Boolean): Boolean =
+        stillDenied && awaitingGrant
 
     /**
      * Pure cold-start skip decision: skip ONLY on an exact match against a fingerprint a
@@ -323,11 +342,14 @@ object AlarmScheduler {
                 cancelPendingAlarm(alarmManager, context, requestCode, ACTION_PRAYER_ALARM)
             }
 
-            // Pre-Prayer Warning: armed when enabled and its instant is still future,
-            // explicitly cancelled otherwise (covers both the disabled switch and slots whose
-            // lead has already passed in this frame).
+            // Pre-Prayer Warning: armed when the prayer is polar-valid, pre is enabled, and
+            // its instant is still future; explicitly cancelled otherwise (disabled switch,
+            // lead already passed, or invalid Subuh/Isya midnight placeholder).
             val preRequestCode = getRequestCode(date, type, isPrePrayer = true)
-            if (shouldArmPrePrayerSlot(prayerDateTime, now, isPreWarningEnabled, preWarningMinutes)) {
+            if (shouldArmPrePrayerSlot(
+                    prayerDateTime, now, isPreWarningEnabled, preWarningMinutes,
+                    isPrayerValid(type, dayTimes)
+                )) {
                 val prePrayerDateTime = prayerDateTime.minusMinutes(preWarningMinutes.toLong())
                 val preEpochMillis = AlarmTime.epochMillisForCity(prePrayerDateTime, city.timezone)
 

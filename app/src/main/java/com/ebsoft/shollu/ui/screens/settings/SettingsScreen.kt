@@ -63,6 +63,7 @@ fun SettingsScreen(
     val isFloatingDropzoneRunning by FloatingDropzoneService.isRunning.collectAsState()
 
     var showMethodDialog by remember { mutableStateOf(false) }
+    var showAsrDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
 
     // Pure mutation matrix (JVM-tested): decide WHICH effects each control triggers; this
@@ -72,6 +73,9 @@ fun SettingsScreen(
             mutations = object : SettingsMutations {
                 override suspend fun updateCalculationMethod(method: CalculationMethod) =
                     preferences.updateCalculationMethod(method)
+
+                override suspend fun updateAsrJuristic(juristic: AsrJuristic) =
+                    preferences.updateAsrJuristic(juristic)
 
                 override suspend fun adjustIhtiyatMinutes(delta: Int) =
                     preferences.incrementIhtiyatMinutes(delta)
@@ -188,6 +192,15 @@ fun SettingsScreen(
 
                 SettingsDivider()
 
+                SettingsRow(
+                    icon = Icons.Default.WbSunny,
+                    title = "Penetapan Waktu Ashar",
+                    subtitle = asrJuristic.displayName,
+                    onClick = { showAsrDialog = true }
+                )
+
+                SettingsDivider()
+
                 StepperRow(
                     icon = Icons.Default.Schedule,
                     title = "Ihtiyat (Menit Pengaman)",
@@ -225,7 +238,7 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Default.VerticalAlignBottom,
                     title = "Status Bar Countdown Berkelanjutan",
-                    subtitle = "Muncul di notification shade; hitung mundur live; swipe kiri atau ketuk Matikan untuk menutup; aktifkan kembali dari tombol ini.",
+                    subtitle = "Muncul di notification shade; hitung mundur live; tidak bisa swipe; Matikan atau saklar ini.",
                     trailing = {
                         Switch(
                             checked = isOngoingEnabled,
@@ -354,6 +367,48 @@ fun SettingsScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showMethodDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+
+    if (showAsrDialog) {
+        AlertDialog(
+            onDismissRequest = { showAsrDialog = false },
+            title = { Text("Pilih Penetapan Waktu Ashar", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    AsrJuristic.values().forEach { juristic ->
+                        Surface(
+                            onClick = {
+                                launchSetting { actions.setAsrJuristic(juristic) }
+                                showAsrDialog = false
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (juristic == asrJuristic) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            } else {
+                                Color.Transparent
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = juristic.displayName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (juristic == asrJuristic) FontWeight.Bold else FontWeight.Normal,
+                                color = if (juristic == asrJuristic) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAsrDialog = false }) { Text("Batal") }
             }
         )
     }

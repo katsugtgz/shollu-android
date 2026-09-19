@@ -17,10 +17,10 @@ AlarmManager pipeline: arm/cancel prayer + agenda-reminder alarms, GPS timezone 
 - 48h window = `allPrayerSlots(today) + allPrayerSlots(tomorrow)`, 10 slots, NO validity filter. Every slot arm-or-cancels BOTH main and pre (`slotRequestCodes`). Disarm always via `cancelPendingAlarm` — NO_CREATE lookup, no-op when nothing armed. Never "skip" a slot silently: a past-here slot may still be armed under the previous city/GPS frame.
 - Request codes: `base=(year%100)*10000 + dayOfYear*10 + type.ordinal`, main `2*base`, pre `2*base+1`; disjoint across 100 years (dated max 1,987,335). Snooze = fixed `SNOOZE_REQUEST_CODE = 1_990_000` (date-invariant + FLAG_UPDATE_CURRENT ⇒ new snooze replaces old). Reminders = `20_000_000 + id % 1_000_000`. Three namespaces; keep them disjoint.
 - Exact alarms: `setAlarmClock` first; `SecurityException` (Android 12+ revoked) falls back to `setAndAllowWhileIdle`. Pattern duplicated in both schedulers.
-- Pure, JVM-testable decision helpers — keep side-effect-free: `shouldArmSlot`, `shouldArmPrePrayerSlot`, `isPrayerValid`, `majorPrayerSlots`, `nextValidRolloverTarget`, `currentPrayer`, `getNextTriggerDateTime`, `shouldRederiveGpsTimezone`.
-- `AlarmTime` = the ONLY legal device-zone→city conversion point (`zoneOffsetFor` rounds fractional hours to seconds; `epochMillisForCity`; `cityWallClockNow`; `remainingSecondsUntilCityWall` clamped ≥0).
-- GPS tz re-derive: only TIMEZONE_CHANGED + GPS-selected city (`shouldRederiveGpsTimezone`); `rederiveGpsTimezone` copies ONLY `timezone`, identity fields preserved.
-- Reminder path is deliberately device-local: `scheduleReminder` converts via `ZoneId.systemDefault()` — reminders are device wall-time, unlike the prayer path. Don't "unify" it onto `AlarmTime`.
+- Pure, JVM-testable decision helpers — keep side-effect-free: `shouldArmSlot`, `shouldArmPrePrayerSlot`, `isPrayerValid`, `majorPrayerSlots`, `nextValidRolloverTarget`, `currentPrayer`, `getNextTriggerDateTime`, `nextPresetInstant`, `shouldRederiveGpsTimezone`, `needsExactAlarmPrompt`, `shouldReshowExactAlarmPrompt`.
+- `AlarmTime` = the ONLY legal device-zone→city conversion point (`zoneOffsetFor` rounds fractional hours to seconds; `epochMillisForCity`; `cityWallClockNow`; `remainingSecondsUntilCityWall` clamped ≥0). Prayer **and** reminder instants convert here.
+- GPS tz re-derive: only TIMEZONE_CHANGED + GPS-selected city (`shouldRederiveGpsTimezone`); `rederiveGpsTimezone` copies ONLY `timezone`. New offset = `GpsOffset.offsetHours(lat, lon, GpsOffset.deviceFallbackHours(), country)` — Indonesia (country name or bbox) uses WIB/WITA/WIT bands; Singapore/Malaysia/Brunei and coords outside the bbox use that DST-aware device fallback. Conversion of prayer instants still goes through `AlarmTime` (city frame), never `ZoneId.systemDefault()`.
+- Reminder path uses the city frame (`AlarmTime`), not `ZoneId.systemDefault()`. `nextPresetInstant` owns Tahajjud Subuh−45 (scan offsets 0..2) and Ayyamul Bidh Hijri 13–15 with `hijriAdjustment`. Fingerprint v4 includes `reminderType`, `customOffsets`, `hijriAdjustment`.
 - `BootCompletedReceiver` order is load-bearing: tz re-derive → `ensureDefaultPresets` → prayer alarms → reminders (boot flag) → widget refresh → FGS restart. Builds its own graph (`SholluPreferences`, `SholluDatabase.getDatabase`) — ignores `SholluApplication` singletons.
 - `PrayerAlarmReceiver`: starts `VibrationAlarmService` (FGS on O+) first, launches `FullscreenAlarmActivity` only when `!isPrePrayer`; `isPrePrayer` doubles as the nudge flag in the service (T-10 buzzes one short burst, not the 45s loop) — no separate extra needed here.
 - `ReminderAlarmReceiver`: notif id `3000 + reminderId`, channel `shollu_scheduler_channel_v2` recreated inline each fire; goAsync block reloads the reminder from DAO directly (`getReminderById`) — bypasses the repository layer.
@@ -31,7 +31,7 @@ AlarmManager pipeline: arm/cancel prayer + agenda-reminder alarms, GPS timezone 
 - No pref reads outside the mutex before arming.
 - No disarming a slot's main alarm without also cancelling its pre alarm.
 - No ad-hoc request codes — only `getRequestCode` / `getSnoozeRequestCode` / `getReminderRequestCode`.
-- No `LocalDateTime.now()` / `ZoneId.systemDefault()` in prayer-path math (snooze trigger base `System.currentTimeMillis()` is fine — it's an epoch delta).
+- No `LocalDateTime.now()` / `ZoneId.systemDefault()` in prayer-path **or reminder-path** math (snooze trigger base `System.currentTimeMillis()` is fine — it's an epoch delta).
 
 ## NOTES
 

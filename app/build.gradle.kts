@@ -65,6 +65,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -102,14 +103,12 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
 
     // Compose BOM
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
@@ -121,13 +120,13 @@ dependencies {
     // DataStore Preferences
     implementation(libs.androidx.datastore.preferences)
 
-    // WorkManager
+    // WorkManager: app code does not call it, but Glance 1.1.1 depends on work-runtime 2.7.1.
+    // Keep the catalog pin so the resolved classpath stays on 2.11.2 (security + resolve).
     implementation(libs.androidx.work.runtime.ktx)
 
     // AppWidget (Glance)
     implementation(libs.androidx.glance)
     implementation(libs.androidx.glance.appwidget)
-    implementation(libs.androidx.glance.material3)
 
     // Play Services Location
     implementation(libs.play.services.location)

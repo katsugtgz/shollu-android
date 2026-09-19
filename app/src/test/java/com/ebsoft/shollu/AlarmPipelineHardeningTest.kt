@@ -3,6 +3,7 @@ package com.ebsoft.shollu
 import com.ebsoft.shollu.data.db.SholluDatabase
 import com.ebsoft.shollu.data.db.entity.DaysOfWeek
 import com.ebsoft.shollu.data.db.entity.ReminderEntity
+import com.ebsoft.shollu.data.db.entity.ReminderType
 import com.ebsoft.shollu.data.model.AsrJuristic
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.City
@@ -289,7 +290,7 @@ class AlarmPipelineHardeningTest {
     @Test
     fun testDefaultPresetsSeededExactlyOnce() {
         val firstCall = SholluDatabase.presetsToInsert(emptyList())
-        assertEquals("Fresh install must seed all presets", 4, firstCall.size)
+        assertEquals("Fresh install must seed all presets", 6, firstCall.size)
 
         // Second call: table already populated -> nothing inserted
         val secondCall = SholluDatabase.presetsToInsert(SholluDatabase.defaultPresets())
@@ -303,17 +304,16 @@ class AlarmPipelineHardeningTest {
     @Test
     fun testEnabledDefaultPresetsExistAndArmInTheFuture() {
         val enabled = SholluDatabase.defaultPresets().filter { it.isEnabled }
-        assertEquals("Al-Kahfi, Senin-Kamis and Dhuha presets must be enabled by default", 3, enabled.size)
+        assertEquals("Al-Kahfi, two Senin-Kamis, Ayyamul Bidh, Tahajjud and Dhuha presets must be enabled by default", 6, enabled.size)
 
         val now = LocalDateTime.of(2026, 8, 29, 10, 0) // Saturday
+        val subuh = LocalTime.of(4, 38)
         for (preset in enabled) {
-            val trigger = ReminderAlarmScheduler.getNextTriggerDateTime(
-                now = now,
-                timeHour = preset.timeHour,
-                timeMinute = preset.timeMinute,
-                daysOfWeek = preset.daysOfWeek
+            val trigger = ReminderAlarmScheduler.nextPresetInstant(preset, now) { subuh }
+            assertTrue(
+                "Enabled preset '${preset.title}' must arm at a future instant",
+                trigger != null && trigger.isAfter(now)
             )
-            assertTrue("Enabled preset '${preset.title}' must arm at a future instant", trigger.isAfter(now))
         }
     }
 
@@ -332,19 +332,16 @@ class AlarmPipelineHardeningTest {
             SholluDatabase.defaultPresets(), SholluDatabase.presetsToInsert(emptyList())
         )
         val enabled = SholluDatabase.presetsToInsert(emptyList()).filter { it.isEnabled }
+        val subuh = LocalTime.of(4, 38)
         for (hour in 0..23) {
             val now = LocalDate.of(2026, 8, 29).atTime(hour, 1) // a boot could happen any minute
             for (preset in enabled) {
-                val trigger = ReminderAlarmScheduler.getNextTriggerDateTime(
-                    now = now,
-                    timeHour = preset.timeHour,
-                    timeMinute = preset.timeMinute,
-                    daysOfWeek = preset.daysOfWeek
-                )
-                assertTrue("Preset '${preset.title}' must arm after a $now:00 boot", trigger.isAfter(now))
+                val trigger = ReminderAlarmScheduler.nextPresetInstant(preset, now) { subuh }
+                assertTrue("Preset '${preset.title}' must arm after a $now:00 boot", trigger != null && trigger.isAfter(now))
+                val maxDays = if (preset.reminderType == ReminderType.PRESET_AYYAMUL_BIDH) 45L else 8L
                 assertFalse(
-                    "Preset '${preset.title}' must arm within a week of a $now boot, got $trigger",
-                    trigger.isAfter(now.plusDays(8))
+                    "Preset '${preset.title}' must arm within ${maxDays}d of a $now boot, got $trigger",
+                    trigger!!.isAfter(now.plusDays(maxDays))
                 )
             }
         }
@@ -744,7 +741,10 @@ class AlarmPipelineHardeningTest {
             "enabled flag" to rows.mapIndexed { i, r -> if (i == 0) r.copy(isEnabled = false) else r },
             "max vibration extra" to rows.mapIndexed { i, r -> if (i == 0) r.copy(isMaxVibration = false) else r },
             "title extra" to rows.mapIndexed { i, r -> if (i == 0) r.copy(title = "Al-Kahfi (Jumat)") else r },
-            "description extra" to rows.mapIndexed { i, r -> if (i == 0) r.copy(description = "Segera") else r }
+            "description extra" to rows.mapIndexed { i, r -> if (i == 0) r.copy(description = "Segera") else r },
+            "reminder type" to rows.mapIndexed { i, r ->
+                if (i == 0) r.copy(reminderType = ReminderType.PRESET_TAHAJJUD) else r
+            }
         )
         for ((label, changed) in mutations) {
             assertNotEquals("changed [$label] must change the reminder fingerprint",
@@ -761,6 +761,57 @@ class AlarmPipelineHardeningTest {
             AlarmScheduler.shouldSkipArm(identical, identical))
         assertFalse("no persisted reminder fingerprint must never skip",
             AlarmScheduler.shouldSkipArm(null, identical))
+
+        assertTrue("v4 fingerprint must not match a v3 persisted value", identical.startsWith("v4|"))
+        assertNotEquals(
+            "calculation method must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, calculationMethod = CalculationMethod.ISNA
+            )
+        )
+        assertNotEquals(
+            "juristic must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, juristic = AsrJuristic.HANAFI
+            )
+        )
+        assertNotEquals(
+            "ihtiyat must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, ihtiyatMinutes = 5
+            )
+        )
+        assertNotEquals(
+            "city latitude must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, cityLatitude = -6.2088
+            )
+        )
+        assertNotEquals(
+            "city longitude must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, cityLongitude = 106.8456
+            )
+        )
+        assertNotEquals(
+            "custom offsets must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, offsets = mapOf("SUBUH" to 3)
+            )
+        )
+        assertNotEquals(
+            "hijri adjustment must change the reminder fingerprint",
+            base,
+            ReminderAlarmScheduler.armingFingerprint(
+                rows, 7.0, date, hijriAdjustment = 1
+            )
+        )
     }
 
     // =========================================================================
@@ -887,7 +938,10 @@ class AlarmPipelineHardeningTest {
                     "cancel:$mainCode"
                 }
                 val preCode = AlarmScheduler.getRequestCode(date, type, isPrePrayer = true)
-                ops += if (AlarmScheduler.shouldArmPrePrayerSlot(wall, snapshot.now, snapshot.preEnabled, snapshot.preMinutes)) {
+                ops += if (AlarmScheduler.shouldArmPrePrayerSlot(
+                        wall, snapshot.now, snapshot.preEnabled, snapshot.preMinutes,
+                        AlarmScheduler.isPrayerValid(type, fixedTimes())
+                    )) {
                     "arm:$preCode"
                 } else {
                     "cancel:$preCode"

@@ -33,6 +33,9 @@ class OngoingNotificationDismissReceiver : BroadcastReceiver() {
                 SholluApplication.preferencesOf(context).setOngoingNotificationEnabled(false)
             } finally {
                 context.stopService(Intent(context, OngoingNotificationService::class.java))
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                    as android.app.NotificationManager
+                manager.cancel(OngoingNotificationService.NOTIFICATION_ID)
                 pending.finish()
             }
         }
