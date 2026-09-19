@@ -540,10 +540,7 @@ class MainActivity : ComponentActivity() {
             val finalCityName = locality ?: "GPS (${String.format(Locale.US, "%.4f, %.4f", location.latitude, location.longitude)})"
             val finalCountry = if (countryName.isNotBlank()) countryName else "Koordinat GPS"
 
-            val fallbackHours = com.ebsoft.shollu.engine.AstroCalculator.currentOffsetHours(
-                java.util.TimeZone.getDefault().id,
-                System.currentTimeMillis()
-            )
+            val fallbackHours = GpsOffset.deviceFallbackHours()
             val tz = GpsOffset.offsetHours(
                 location.latitude,
                 location.longitude,

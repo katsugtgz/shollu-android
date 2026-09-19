@@ -25,6 +25,10 @@ object GpsOffset {
         }
     }
 
+    /** DST-aware device offset for GPS cities that are not Indonesian territory. */
+    fun deviceFallbackHours(atMillis: Long = System.currentTimeMillis()): Double =
+        AstroCalculator.currentOffsetHours(java.util.TimeZone.getDefault().id, atMillis)
+
     internal fun isIndonesianTerritory(lat: Double, lon: Double, countryName: String = ""): Boolean {
         val country = countryName.lowercase()
         if (country.contains("indonesia")) return true

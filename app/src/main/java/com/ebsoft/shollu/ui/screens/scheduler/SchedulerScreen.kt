@@ -308,16 +308,16 @@ private fun AddReminderDialog(
             }
         },
         confirmButton = {
-            val draft = CustomReminderDraft(
-                title = title,
-                description = desc,
-                hour = hourField.value,
-                minute = minuteField.value,
-                once = once
-            )
             Button(
-                enabled = draft.isSavable(),
+                enabled = title.isNotBlank(),
                 onClick = {
+                    val draft = CustomReminderDraft(
+                        title = title,
+                        description = desc,
+                        hour = hourField.value,
+                        minute = minuteField.value,
+                        once = once
+                    )
                     if (draft.isSavable()) {
                         onSave(
                             draft.title,

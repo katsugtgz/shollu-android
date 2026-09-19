@@ -40,7 +40,12 @@ class GpsOffsetTest {
     @Test
     fun testOutsideIndonesiaUsesFallback() {
         assertEquals(0.0, GpsOffset.offsetHours(51.5, -0.12, 0.0), 0.0)
-        assertEquals(8.0, GpsOffset.offsetHours(1.35, 103.8, 8.0, "Singapore"), 0.0)
+        assertEquals(
+            "Singapore country marker must take fallback, not the lon-band 8.0",
+            unusedFallback,
+            GpsOffset.offsetHours(1.35, 103.8, unusedFallback, "Singapore"),
+            0.0
+        )
         assertEquals(-5.0, GpsOffset.offsetHours(40.7, -74.0, -5.0), 0.0)
         assertEquals(5.5, GpsOffset.offsetHours(28.6, 77.2, 5.5), 0.0)
     }
@@ -65,6 +70,6 @@ class GpsOffsetTest {
         assertTrue(GpsOffset.isIndonesianTerritory(1.15, 104.0, "Indonesia"))
         assertEquals(7.0, GpsOffset.offsetHours(6.1, 94.9, unusedFallback), 0.0)
         assertEquals(9.0, GpsOffset.offsetHours(-11.0, 141.1, unusedFallback), 0.0)
-        assertEquals(8.0, GpsOffset.offsetHours(1.35, 103.8, 8.0, "Singapore"), 0.0)
+        assertEquals(unusedFallback, GpsOffset.offsetHours(1.35, 103.8, unusedFallback, "Singapore"), 0.0)
     }
 }

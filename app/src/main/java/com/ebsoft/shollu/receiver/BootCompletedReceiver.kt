@@ -33,10 +33,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
                     val isGpsCity = preferences.isSelectedCityGps.first()
                     if (AlarmTime.shouldRederiveGpsTimezone(action, isGpsCity)) {
                         val city = preferences.selectedCity.first()
-                        val fallbackHours = com.ebsoft.shollu.engine.AstroCalculator.currentOffsetHours(
-                            java.util.TimeZone.getDefault().id,
-                            System.currentTimeMillis()
-                        )
+                        val fallbackHours = com.ebsoft.shollu.engine.GpsOffset.deviceFallbackHours()
                         val newOffsetHours = com.ebsoft.shollu.engine.GpsOffset.offsetHours(
                             city.latitude,
                             city.longitude,

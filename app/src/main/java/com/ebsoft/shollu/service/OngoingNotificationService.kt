@@ -37,6 +37,7 @@ class OngoingNotificationService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
     private var countdownJob: Job? = null
+    @Volatile private var postingEnabled = false
     private lateinit var preferences: SholluPreferences
     private lateinit var prayerRepository: IPrayerRepository
 
@@ -72,6 +73,7 @@ class OngoingNotificationService : Service() {
 
     private fun startOngoingCountdown() {
         countdownJob?.cancel()
+        postingEnabled = true
         countdownJob = serviceScope.launch {
             combine(
                 preferences.isOngoingNotificationEnabled,
@@ -156,6 +158,7 @@ class OngoingNotificationService : Service() {
         subText: String,
         targetEpochMillis: Long
     ) {
+        if (!postingEnabled) return
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -235,6 +238,7 @@ class OngoingNotificationService : Service() {
                 .build()
         }
 
+        if (!postingEnabled) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -247,6 +251,7 @@ class OngoingNotificationService : Service() {
     }
 
     private fun stopOngoingCountdown() {
+        postingEnabled = false
         countdownJob?.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -269,6 +274,7 @@ class OngoingNotificationService : Service() {
     }
 
     override fun onDestroy() {
+        postingEnabled = false
         countdownJob?.cancel()
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
