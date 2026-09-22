@@ -15,6 +15,8 @@ import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import java.time.format.DateTimeFormatter
@@ -22,6 +24,26 @@ import java.time.format.DateTimeFormatter
 class OngoingNotificationService : Service() {
 
     companion object {
+        private val _isRunning = MutableStateFlow(false)
+
+        /** Truthful running state: true only while the countdown notification is up. */
+        val isRunning: StateFlow<Boolean> = _isRunning
+
+        private val runningLock = Any()
+        private var runningSession = 0
+
+        private fun beginRunningSession(): Int = synchronized(runningLock) { ++runningSession }
+
+        /** A late startForeground from a cancelled countdown must not resurrect the switch. */
+        private fun publishRunning(session: Int) = synchronized(runningLock) {
+            if (runningSession == session) _isRunning.value = true
+        }
+
+        private fun publishStopped() = synchronized(runningLock) {
+            runningSession++
+            _isRunning.value = false
+        }
+
         const val ACTION_START_ONGOING = "com.ebsoft.shollu.ACTION_START_ONGOING"
         const val ACTION_STOP_ONGOING = "com.ebsoft.shollu.ACTION_STOP_ONGOING"
         const val ACTION_UPDATE_ONGOING = "com.ebsoft.shollu.ACTION_UPDATE_ONGOING"
@@ -74,6 +96,7 @@ class OngoingNotificationService : Service() {
     private fun startOngoingCountdown() {
         countdownJob?.cancel()
         postingEnabled = true
+        val session = beginRunningSession()
         countdownJob = serviceScope.launch {
             combine(
                 preferences.isOngoingNotificationEnabled,
@@ -139,7 +162,8 @@ class OngoingNotificationService : Service() {
                         title = "Menuju $displayNameWithDay ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",
                         content = "${config.city.name} • Shollu Pengingat Sholat",
                         subText = "Hitung Mundur Sholat",
-                        targetEpochMillis = targetEpochMillis
+                        targetEpochMillis = targetEpochMillis,
+                        session = session
                     )
 
                     // Real-instant countdown: epoch difference, immune to zone mismatches.
@@ -156,7 +180,8 @@ class OngoingNotificationService : Service() {
         title: String,
         content: String,
         subText: String,
-        targetEpochMillis: Long
+        targetEpochMillis: Long,
+        session: Int
     ) {
         if (!postingEnabled) return
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
@@ -248,10 +273,12 @@ class OngoingNotificationService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        publishRunning(session)
     }
 
     private fun stopOngoingCountdown() {
         postingEnabled = false
+        publishStopped()
         countdownJob?.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -283,6 +310,7 @@ class OngoingNotificationService : Service() {
         }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .cancel(NOTIFICATION_ID)
+        publishStopped()
         serviceScope.cancel()
         super.onDestroy()
     }

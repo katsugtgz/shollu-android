@@ -85,7 +85,9 @@ fun QiblaCompassScreen(
 ) {
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }
-    var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_HIGH) }
+    // Starts UNRELIABLE: until the sensor reports its accuracy we do not yet know the
+    // compass is calibrated, so the calibration hint (not confirmation) is the default.
+    var sensorAccuracy by remember { mutableIntStateOf(UNRELIABLE) }
     // Starts false: registration is owned by the lifecycle observer below (its addObserver
     // catch-up dispatch delivers ON_START when already STARTED), never by effect-body code.
     var sensorAvailable by remember { mutableStateOf(false) }
@@ -196,13 +198,29 @@ fun QiblaCompassScreen(
         // observer's addObserver catch-up dispatch delivers ON_START synchronously when
         // already STARTED), every subsequent START, and ON_STOP teardown.
         fun registerAll(): Boolean {
-            var any = false
+            var rotationVectorRegistered = false
+            var accelRegistered = false
+            var magRegistered = false
+            var orientationRegistered = false
             for (sensor in sensors) {
-                if (sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)) {
-                    any = true
+                val registered = sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+                when (sensor.type) {
+                    Sensor.TYPE_ROTATION_VECTOR -> rotationVectorRegistered = registered
+                    Sensor.TYPE_ACCELEROMETER -> accelRegistered = registered
+                    Sensor.TYPE_MAGNETIC_FIELD, Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED -> magRegistered = registered
+                    @Suppress("DEPRECATION")
+                    Sensor.TYPE_ORIENTATION -> orientationRegistered = registered
                 }
             }
-            return any
+            // Availability must be truthful (QiblaSensorGate): a half-registered accel+mag
+            // pair is not a compass — both halves must have registered, while the
+            // single-sensor sources (rotation vector, orientation) stand alone.
+            return compassRegistrationOk(
+                rotationVectorRegistered,
+                accelRegistered,
+                magRegistered,
+                orientationRegistered
+            )
         }
 
         fun unregisterAll() {
@@ -243,7 +261,7 @@ fun QiblaCompassScreen(
     // Qibla bearing; confirmation is suppressed while no sensor is feeding azimuth updates.
     val trueAzimuth = QiblaCalculator.qiblaTrueBearingFromMagnetic(azimuth.toDouble(), declination.toDouble()).toFloat()
     val diff = (trueAzimuth - qiblaBearing + 360f) % 360f
-    val isAligned = sensorAvailable && freshSample && (diff < 3f || diff > 357f)
+    val isAligned = freshSample && qiblaConfirmAllowed(sensorAvailable, sensorAccuracy, diff)
 
     val animatedAzimuth by animateFloatAsState(
         targetValue = -azimuth,
@@ -390,6 +408,13 @@ fun QiblaCompassScreen(
                         )
                     }
                 }
+            } else if (sensorAccuracy == UNRELIABLE || sensorAccuracy == LOW) {
+                Text(
+                    text = "Kalibrasi kompas",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             } else if (isAligned) {
                 Card(
                     shape = MaterialTheme.shapes.medium,

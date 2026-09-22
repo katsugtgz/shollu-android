@@ -12,6 +12,7 @@ import com.ebsoft.shollu.R
 import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.receiver.PrayerAlarmReceiver
 import com.ebsoft.shollu.ui.MainActivity
+import com.ebsoft.shollu.ui.screens.settings.vibrationTestSpec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +46,12 @@ class VibrationAlarmService : Service() {
          * reminders) so a nudge never mimics the adzan alert.
          */
         const val EXTRA_IS_NUDGE = "extra_is_nudge"
+
+        /**
+         * Settings "Tes Getar" path. Distinct from prayer entry and from [EXTRA_IS_NUDGE]:
+         * title, body, and auto-stop come from [vibrationTestSpec], not the adhan copy.
+         */
+        const val EXTRA_IS_VIBRATION_TEST = "extra_is_vibration_test"
 
         /**
          * Per-alert intensity override (e.g. a reminder's own max-vibration toggle).
@@ -133,9 +140,12 @@ class VibrationAlarmService : Service() {
         val prayerName = intent?.getStringExtra(EXTRA_PRAYER_NAME) ?: "Sholat"
         val prayerTime = intent?.getStringExtra(EXTRA_PRAYER_TIME) ?: ""
         val isPrePrayer = intent?.getBooleanExtra(EXTRA_IS_PRE_PRAYER, false) ?: false
+        val isVibrationTest = intent?.getBooleanExtra(EXTRA_IS_VIBRATION_TEST, false) ?: false
         // Pre-prayer IS a nudge — senders only need the extra for OTHER nudge paths
         // (agenda reminders); they never set it to downgrade a real prayer alarm.
-        val isNudge = isPrePrayer || (intent?.getBooleanExtra(EXTRA_IS_NUDGE, false) ?: false)
+        // A vibration test is neither: it keeps the maximal waveform and its own stop.
+        val isNudge = !isVibrationTest &&
+            (isPrePrayer || (intent?.getBooleanExtra(EXTRA_IS_NUDGE, false) ?: false))
 
         // Intensity: per-alert override (agenda reminder toggle) or the global
         // "Getar Intensitas Maksimal" preference, read runBlocking-free before choosing
@@ -160,7 +170,15 @@ class VibrationAlarmService : Service() {
             // and resurrect or truncate each other's alert.
             autoStopHandler?.post {
                 if (gen == alertGeneration.get()) {
-                    startMaxVibration(gen, prayerName, prayerTime, isPrePrayer, isNudge, maxIntensity)
+                    startMaxVibration(
+                        gen,
+                        prayerName,
+                        prayerTime,
+                        isPrePrayer,
+                        isNudge,
+                        maxIntensity,
+                        isVibrationTest
+                    )
                 }
             }
         }
@@ -173,7 +191,8 @@ class VibrationAlarmService : Service() {
         prayerTime: String,
         isPrePrayer: Boolean,
         isNudge: Boolean,
-        maxIntensity: Boolean
+        maxIntensity: Boolean,
+        isVibrationTest: Boolean
     ) {
         try {
             // Armed BEFORE any early-exit/throw window: SCREEN_OFF in the gap between
@@ -189,15 +208,16 @@ class VibrationAlarmService : Service() {
 
             createNotificationChannel()
 
-            val title = if (isPrePrayer) {
-                "Pengingat: Waktu $prayerName Segera Tiba"
-            } else {
-                "Waktu $prayerName Telah Masuk ($prayerTime)"
+            val testSpec = if (isVibrationTest) vibrationTestSpec() else null
+            val title = when {
+                testSpec != null -> testSpec.title
+                isPrePrayer -> "Pengingat: Waktu $prayerName Segera Tiba"
+                else -> "Waktu $prayerName Telah Masuk ($prayerTime)"
             }
-            val content = if (isPrePrayer) {
-                "Persiapkan diri mengambil wudhu dan menuju masjid."
-            } else {
-                "Mari tunaikan ibadah sholat $prayerName tepat waktu."
+            val content = when {
+                testSpec != null -> testSpec.body
+                isPrePrayer -> "Persiapkan diri mengambil wudhu dan menuju masjid."
+                else -> "Mari tunaikan ibadah sholat $prayerName tepat waktu."
             }
 
             val stopIntent = Intent(this, VibrationAlarmService::class.java).apply {
@@ -268,10 +288,10 @@ class VibrationAlarmService : Service() {
             // Auto stop: nudges end with their (one-shot) waveform — a 2.5s buzz should
             // not keep the FGS notification up for the alarm-length window. Prayer
             // entry keeps the 45s cap (battery/motor heat guard).
-            val autoStopDelay = if (isNudge) {
-                (waveform.timings.sum() + 250L).coerceAtMost(45_000L)
-            } else {
-                45_000L
+            val autoStopDelay = when {
+                testSpec != null -> testSpec.autoStopMillis
+                isNudge -> (waveform.timings.sum() + 250L).coerceAtMost(45_000L)
+                else -> 45_000L
             }
             // This alert is now the one vibrating: publish its generation BEFORE replacing
             // the stop schedule, so any still-queued stop of the previous alert becomes a

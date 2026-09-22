@@ -255,6 +255,9 @@ private fun AddReminderDialog(
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
     var once by remember { mutableStateOf(false) }
+    var titleError by remember { mutableStateOf<String?>(null) }
+    var hourError by remember { mutableStateOf<String?>(null) }
+    var minuteError by remember { mutableStateOf<String?>(null) }
     val hourField = remember { TimeFieldState(maxValue = 23, initialText = "06") }
     val minuteField = remember { TimeFieldState(maxValue = 59, initialText = "00") }
     val repeatChoices = remember { listOf(false, true) }
@@ -269,6 +272,8 @@ private fun AddReminderDialog(
                     onValueChange = { title = it },
                     label = { Text("Judul Agenda / Doa") },
                     placeholder = { Text("Contoh: Membaca Al-Qur'an 1 Juz") },
+                    isError = titleError != null,
+                    supportingText = titleError?.let { message -> { Text(message) } },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -288,6 +293,8 @@ private fun AddReminderDialog(
                         value = hourField.text,
                         onValueChange = { hourField.onValueChange(it) },
                         label = { Text("Jam (0-23)") },
+                        isError = hourError != null,
+                        supportingText = hourError?.let { message -> { Text(message) } },
                         modifier = Modifier.weight(1f)
                     )
                     Text(":", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
@@ -295,6 +302,8 @@ private fun AddReminderDialog(
                         value = minuteField.text,
                         onValueChange = { minuteField.onValueChange(it) },
                         label = { Text("Menit (0-59)") },
+                        isError = minuteError != null,
+                        supportingText = minuteError?.let { message -> { Text(message) } },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -311,21 +320,30 @@ private fun AddReminderDialog(
             Button(
                 enabled = title.isNotBlank(),
                 onClick = {
-                    val draft = CustomReminderDraft(
-                        title = title,
-                        description = desc,
-                        hour = hourField.value,
-                        minute = minuteField.value,
-                        once = once
-                    )
-                    if (draft.isSavable()) {
-                        onSave(
-                            draft.title,
-                            draft.description,
-                            draft.hour,
-                            draft.minute,
-                            draft.daysRaw()
-                        )
+                    when (val result = validateReminderDraft(title, hourField.text, minuteField.text)) {
+                        is ReminderDraftResult.Accepted -> {
+                            // validateReminderDraft gates the save (raw text, real errors);
+                            // CustomReminderDraft still owns the days token (ONCE vs *).
+                            val draft = CustomReminderDraft(
+                                title = title,
+                                description = desc,
+                                hour = result.hour,
+                                minute = result.minute,
+                                once = once
+                            )
+                            onSave(
+                                draft.title,
+                                draft.description,
+                                draft.hour,
+                                draft.minute,
+                                draft.daysRaw()
+                            )
+                        }
+                        is ReminderDraftResult.Rejected -> {
+                            titleError = result.titleError
+                            hourError = result.hourError
+                            minuteError = result.minuteError
+                        }
                     }
                 }
             ) {

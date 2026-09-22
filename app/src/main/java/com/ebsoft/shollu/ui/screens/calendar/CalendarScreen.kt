@@ -217,11 +217,11 @@ private fun MonthlyScheduleView(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("${item.date.dayOfMonth}", style = MaterialTheme.typography.labelSmall, fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.width(28.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.SUBUH), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.DZUHUR), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.ASHAR), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.MAGHRIB), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp))
-                        Text(item.getFormattedTimeFor(PrayerType.ISYA), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
+                        Text(item.displayTime(PrayerType.SUBUH), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
+                        Text(item.displayTime(PrayerType.DZUHUR), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
+                        Text(item.displayTime(PrayerType.ASHAR), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
+                        Text(item.displayTime(PrayerType.MAGHRIB), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp))
+                        Text(item.displayTime(PrayerType.ISYA), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp))
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                 }
@@ -374,14 +374,14 @@ private fun exportSchedule(
     val tableLines = schedule.map { item ->
         listOf(
             item.date.dayOfMonth.toString(),
-            item.getFormattedTimeFor(PrayerType.IMSAK),
-            item.getFormattedTimeFor(PrayerType.SUBUH),
-            item.getFormattedTimeFor(PrayerType.TERBIT),
-            item.getFormattedTimeFor(PrayerType.DHUHA),
-            item.getFormattedTimeFor(PrayerType.DZUHUR),
-            item.getFormattedTimeFor(PrayerType.ASHAR),
-            item.getFormattedTimeFor(PrayerType.MAGHRIB),
-            item.getFormattedTimeFor(PrayerType.ISYA)
+            item.displayTime(PrayerType.IMSAK),
+            item.displayTime(PrayerType.SUBUH),
+            item.displayTime(PrayerType.TERBIT),
+            item.displayTime(PrayerType.DHUHA),
+            item.displayTime(PrayerType.DZUHUR),
+            item.displayTime(PrayerType.ASHAR),
+            item.displayTime(PrayerType.MAGHRIB),
+            item.displayTime(PrayerType.ISYA)
         )
     }
     val payload = ScheduleShare.build(city.name, monthName, tableLines)
