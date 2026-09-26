@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
@@ -37,6 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ebsoft.shollu.ui.util.getComposableName
@@ -59,6 +64,11 @@ import java.util.Locale
  *  - A FAILED refresh never erases the previous report: the caller keeps the old snapshot and
  *    raises [refreshFailed], which renders a tap-to-retry row while the stale "· usang" hint
  *    keeps working as usual.
+ *  - The header exposes its expanded state to screen readers (toggleable state + worded
+ *    stateDescription + expand/collapse semantic actions) — the chevron stays decorative
+ *    (contentDescription = null) because the semantics carry the state. While a repair runs
+ *    ([isRepairing]) the "Perbaiki Jadwal Alarm" button is disabled (label unchanged): one
+ *    sweep at a time, enforced by the caller.
  */
 @Composable
 internal fun AlarmHealthSection(
@@ -67,6 +77,7 @@ internal fun AlarmHealthSection(
     expanded: Boolean,
     stale: Boolean,
     refreshFailed: Boolean,
+    isRepairing: Boolean,
     onToggleExpanded: () -> Unit,
     onRetryRefresh: () -> Unit,
     onRepair: () -> Unit,
@@ -110,6 +121,7 @@ internal fun AlarmHealthSection(
                         report = report,
                         stale = stale,
                         repairOutcome = repairOutcome,
+                        isRepairing = isRepairing,
                         onRepair = onRepair,
                         onRunVibrationTest = onRunVibrationTest,
                         onRemediation = onRemediation
@@ -120,7 +132,14 @@ internal fun AlarmHealthSection(
     }
 }
 
-/** Collapsed/expanded card header: readiness word + freshness in the subtitle, chevron toggle. */
+/**
+ * Collapsed/expanded card header: readiness word + freshness in the subtitle, chevron toggle.
+ * The whole row exposes its state to assistive services: [toggleable] carries the expanded
+ * state + the flip action, a [stateDescription] names it in words ("Dibuka"/"Ditutup"), and
+ * the expand/collapse semantic actions route the a11y affordance. (This Compose version has
+ * no Role.Expandable — the state + actions below are the supported equivalent.) The chevron
+ * icon stays decorative.
+ */
 @Composable
 private fun HeaderRow(
     report: AlarmHealthReport?,
@@ -132,7 +151,18 @@ private fun HeaderRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clickable(onClick = onToggleExpanded),
+            .toggleable(
+                value = expanded,
+                onValueChange = { changed -> if (changed != expanded) onToggleExpanded() }
+            )
+            .semantics {
+                stateDescription = if (expanded) "Dibuka" else "Ditutup"
+                if (expanded) {
+                    collapse { onToggleExpanded(); true }
+                } else {
+                    expand { onToggleExpanded(); true }
+                }
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -205,6 +235,7 @@ private fun ReportBody(
     report: AlarmHealthReport,
     stale: Boolean,
     repairOutcome: RepairOutcome?,
+    isRepairing: Boolean,
     onRepair: () -> Unit,
     onRunVibrationTest: () -> Unit,
     onRemediation: (RemediationIntent) -> Unit
@@ -316,8 +347,10 @@ private fun ReportBody(
 
     Spacer(modifier = Modifier.size(12.dp))
 
+    // Disabled while a repair runs — the label stays so the affordance never disappears.
     Button(
         onClick = onRepair,
+        enabled = !isRepairing,
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth()
     ) {

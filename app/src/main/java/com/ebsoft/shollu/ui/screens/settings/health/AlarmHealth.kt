@@ -113,7 +113,9 @@ object AlarmHealth {
      * the read-only window probe against the expected plan with the precedence
      * probe-failure(UNKNOWN) > nothing-live(FLEET_NOT_ARMED) > missing(FLEET_MISSING_SLOTS)
      * > extra(FLEET_STALE_SETTINGS) > complete-but-drifted (persisted != computed, DEGRADED)
-     * > HEALTHY. A failed probe is UNKNOWN — a diagnostic never overstated as broken.
+     * > HEALTHY. A failed probe is UNKNOWN — a diagnostic never overstated as broken. The
+     * "extra" verdict only counts codes at FUTURE slots: codes at past slots cannot ring at a
+     * future instant (fired or swept), so they are never stale evidence.
      *
      * Aggregation: any UNAVAILABLE -> BLOCKED; else any DEGRADED or UNKNOWN -> DEGRADED
      * (UNKNOWN never reads as READY); else READY. Headline = worst-severity row
@@ -129,16 +131,18 @@ object AlarmHealth {
         val planned = planExpectedFleet(input.toPlanInput())
 
         // Fleet diff: the adapter's read-only probe (null = probe failed) restricted to the
-        // sweep's window code space, diffed against the plan's codes.
+        // sweep's window code space, diffed against the plan's codes. Codes at already-fired
+        // slots are subtracted from the "extra" side — see [firedSlotRequestCodes].
         val expectedCodes = planned.map { it.requestCode }.toSet()
         val liveCodes = probeLiveWindowCodes(input, windowDates)
+        val pastSlotCodes = firedSlotRequestCodes(input, today, today.plusDays(1))
 
         val checks = listOf(
             checkExactAlarm(input),
             checkNotifications(input),
             checkBattery(input),
             checkBootRepair(input),
-            classifyArmedFleet(input, expectedCodes, liveCodes)
+            classifyArmedFleet(input, expectedCodes, liveCodes, pastSlotCodes)
         )
 
         val readiness = when {
@@ -258,15 +262,23 @@ object AlarmHealth {
      * ARMED_FLEET row from the adapter's probe. Precedence is the point: a FAILED probe is
      * UNKNOWN (never guessed into "broken" or "fine"), a silent prayer (missing) is worse
      * than a ghost (extra), a dead fleet (nothing live) is the loudest truth, and drift only
-     * degrades when BOTH fingerprints exist to be compared.
+     * degrades when BOTH fingerprints exist to be compared. "Ghost" means a live code at a
+     * FUTURE slot: codes at past slots are subtracted first ([firedSlotRequestCodes]) because
+     * they cannot ring again — only real extras classify FLEET_STALE_SETTINGS. The missing
+     * rule is untouched: expected codes are strictly future by construction, so fired-slot
+     * residue can never mask a genuine missing slot.
      */
     private fun classifyArmedFleet(
         input: AlarmHealthInput,
         expectedCodes: Set<Int>,
-        liveCodes: Set<Int>?
+        liveCodes: Set<Int>?,
+        pastSlotCodes: Set<Int>
     ): AlarmHealthCheck {
         val missingCodes = liveCodes?.let { expectedCodes - it } ?: emptySet()
-        val extraCodes = liveCodes?.let { it - expectedCodes } ?: emptySet()
+        val extraCodes = liveCodes
+            ?.let { it - expectedCodes }
+            ?.let { it - pastSlotCodes }
+            ?: emptySet()
         return when {
             liveCodes == null -> probeUnknownCheck(AlarmHealthTopic.ARMED_FLEET)
             expectedCodes.isNotEmpty() && liveCodes.isEmpty() -> AlarmHealthCheck(
@@ -308,6 +320,28 @@ object AlarmHealth {
         input.liveProbeRequestCodes?.let { probed ->
             AlarmScheduler.allWindowRequestCodes(windowDates).filterTo(mutableSetOf()) { it in probed }
         }
+
+    /**
+     * Request codes (main AND pre) of every window slot whose MAIN alarm fires at or before
+     * the snapshot instant. Codes at past slots cannot ring at a future instant — the alarm
+     * either already fired or the post-fire sweep cancelled it — so a PendingIntent still
+     * answering NO_CREATE there is the sweep's own un-swept residue, never stale-settings
+     * evidence; the fleet diff subtracts them before judging FLEET_STALE_SETTINGS. Expected
+     * codes need no such correction: the plan arms strictly-future slots only.
+     */
+    private fun firedSlotRequestCodes(
+        input: AlarmHealthInput,
+        today: LocalDate,
+        tomorrow: LocalDate
+    ): Set<Int> =
+        (AlarmScheduler.allPrayerSlots(input.todayTimes, today) +
+            AlarmScheduler.allPrayerSlots(input.tomorrowTimes, tomorrow))
+            .filter { (_, time, date) ->
+                AlarmTime.epochMillisForCity(LocalDateTime.of(date, time), input.cityTimezoneHours) <=
+                    input.nowEpochMillis
+            }
+            .flatMap { (type, _, date) -> AlarmScheduler.slotRequestCodes(date, type) }
+            .toSet()
 
     /** Headline severity ladder: UNAVAILABLE > DEGRADED > UNKNOWN > NOT_APPLICABLE > HEALTHY. */
     private fun severity(status: AlarmCheckStatus): Int = when (status) {

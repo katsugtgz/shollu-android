@@ -357,19 +357,28 @@ class AlarmHealthEvaluateTest {
         assertEquals(RemediationIntent.RUN_REPAIR, check.remediation)
     }
 
-    /** Invariant: live codes outside the plan -> UNAVAILABLE/FLEET_STALE_SETTINGS (settings changed, no re-sweep). */
+    /**
+     * Invariant (transient forgiveness): EVERYTHING in the window live — a complete fleet PLUS
+     * the just-fired past slots' PendingIntent residue — reads HEALTHY. A fired slot's codes
+     * stay NO_CREATE-queryable until the post-fire sweep cancels them, and codes at past slots
+     * cannot ring at a future instant (fired or swept), so they are never stale evidence.
+     */
     @Test
-    fun testFleetExtraLiveSlotsIsUnavailableStaleSettings() {
+    fun testFleetFullWindowLiveWithFiredSlotResidueIsHealthy() {
         val now = LocalDateTime.of(2026, 9, 26, 10, 0)
         // Everything in the window live: includes today's already-past Subuh pair, which the
-        // plan (correctly) does NOT expect — stale leftovers.
+        // plan (correctly) does not EXPECT — fired-slot residue, not stale settings.
         val report = AlarmHealth.evaluate(
             healthInput(cityWallNow = now, liveCodes = AlarmScheduler.allWindowRequestCodes(windowDatesOf(now)))
         )
         val check = report.checkFor(AlarmHealthTopic.ARMED_FLEET)
-        assertEquals(AlarmCheckStatus.UNAVAILABLE, check.status)
-        assertEquals(AlarmHealthReason.FLEET_STALE_SETTINGS, check.reason)
-        assertEquals(RemediationIntent.RUN_REPAIR, check.remediation)
+        assertEquals(
+            "a live PendingIntent at an already-fired slot is un-swept residue — it cannot " +
+                "ring again and must never be reported as FLEET_STALE_SETTINGS",
+            AlarmCheckStatus.HEALTHY, check.status
+        )
+        assertEquals(AlarmHealthReason.NONE, check.reason)
+        assertEquals(RemediationIntent.NONE, check.remediation)
     }
 
     /** Invariant: fleet complete but persisted != computed (both non-null) -> DEGRADED/FLEET_STALE_SETTINGS. */
@@ -481,17 +490,61 @@ class AlarmHealthEvaluateTest {
     @Test
     fun testFleetExtraWithinWindowIsStillStaleSettings() {
         val now = LocalDateTime.of(2026, 9, 26, 10, 0)
-        val staleWindowCode = AlarmScheduler.allWindowRequestCodes(windowDatesOf(now))
-            .minus(expectedRequestCodes(now))
-            .first()
+        // The extra code must sit at a FUTURE slot to prove real staleness: with pre-prayer
+        // disabled, tomorrow-Isya's pre code is inside the window space, live, unexpected —
+        // and its instant is still ahead, so it is genuine stale-settings evidence, never
+        // fired-slot residue.
+        val expected = expectedRequestCodes(now, preEnabled = false)
+        val staleWindowCode = AlarmScheduler.getRequestCode(
+            now.toLocalDate().plusDays(1), PrayerType.ISYA, isPrePrayer = true
+        )
+        assertTrue(
+            "fixture sanity: the chosen extra must live in the sweep's window code space",
+            staleWindowCode in AlarmScheduler.allWindowRequestCodes(windowDatesOf(now))
+        )
+        assertTrue(
+            "fixture sanity: the chosen extra must be unexpected AND at a future instant",
+            staleWindowCode !in expected
+        )
         val report = AlarmHealth.evaluate(
-            healthInput(cityWallNow = now, liveCodes = expectedRequestCodes(now) + staleWindowCode)
+            healthInput(cityWallNow = now, preEnabled = false, liveCodes = expected + staleWindowCode)
         )
         assertEquals(
             "an unexpected live code INSIDE the window space is a stale slot",
             AlarmHealthReason.FLEET_STALE_SETTINGS,
             report.checkFor(AlarmHealthTopic.ARMED_FLEET).reason
         )
+        assertEquals(RemediationIntent.RUN_REPAIR, report.checkFor(AlarmHealthTopic.ARMED_FLEET).remediation)
+    }
+
+    /**
+     * Invariant (transient forgiveness, surgical): a complete fleet PLUS a live code at
+     * today's PAST Maghrib slot stays HEALTHY. The post-fire sweep has not run yet, so the
+     * fired slot's PendingIntents still answer NO_CREATE — but codes at past slots cannot
+     * ring at a future instant (fired or swept), so they are never stale evidence.
+     */
+    @Test
+    fun testFleetLiveCodeAtPastMaghribSlotIsHealthyNotStale() {
+        // 19:00 — Maghrib (17:55) already fired; Isya (19:05) has not.
+        val now = LocalDateTime.of(2026, 9, 26, 19, 0)
+        val firedMaghribCodes = setOf(
+            AlarmScheduler.getRequestCode(now.toLocalDate(), PrayerType.MAGHRIB, isPrePrayer = false),
+            AlarmScheduler.getRequestCode(now.toLocalDate(), PrayerType.MAGHRIB, isPrePrayer = true)
+        )
+        assertTrue(
+            "fixture sanity: the fired codes must be INSIDE the window space yet unexpected",
+            firedMaghribCodes.all { it in AlarmScheduler.allWindowRequestCodes(windowDatesOf(now)) } &&
+                firedMaghribCodes.none { it in expectedRequestCodes(now) }
+        )
+        val report = AlarmHealth.evaluate(
+            healthInput(cityWallNow = now, liveCodes = expectedRequestCodes(now) + firedMaghribCodes)
+        )
+        val check = report.checkFor(AlarmHealthTopic.ARMED_FLEET)
+        assertEquals(
+            "a just-fired slot's residue must not fake FLEET_STALE_SETTINGS on a correct fleet",
+            AlarmCheckStatus.HEALTHY, check.status
+        )
+        assertEquals(AlarmHealthReason.NONE, check.reason)
     }
 
     // =========================================================================

@@ -18,6 +18,7 @@ import com.ebsoft.shollu.receiver.PrayerAlarmReceiver
 import com.ebsoft.shollu.receiver.ReminderAlarmScheduler
 import com.ebsoft.shollu.service.VibrationAlarmService
 import com.ebsoft.shollu.widget.updateSholluWidgets
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -153,6 +154,10 @@ object AlarmHealthProbes {
                     isBootReceiverEnabled = bootReceiverEnabled
                 )
             }
+        } catch (e: CancellationException) {
+            // A cancelled gather is NOT a failed probe: rethrow so structured concurrency
+            // stays intact instead of mapping cancellation to null (a fake "refresh failed").
+            throw e
         } catch (t: Throwable) {
             t.printStackTrace()
             null
@@ -179,7 +184,9 @@ object AlarmHealthProbes {
      * the boot path does, refresh the widgets, then report. Failure classification is
      * delegated to the pure [AlarmHealth.classifyRepairFailure] ([SecurityException] ->
      * [RepairFailureKind.PERMISSION_DENIED], anything else -> [RepairFailureKind.SCHEDULING_ERROR]).
-     * Not runCatching-wrapped as a whole: the two failure kinds must stay distinguishable.
+     * Not runCatching-wrapped as a whole: the two failure kinds must stay distinguishable,
+     * and a [CancellationException] is NEITHER — it is rethrown before the Throwable catch so
+     * a cancelled repair can never be classified as a failure outcome (or swallowed).
      */
     suspend fun runRepair(context: Context): RepairOutcome {
         val appContext = context.applicationContext
@@ -188,6 +195,8 @@ object AlarmHealthProbes {
             ReminderAlarmScheduler.scheduleAllActiveReminders(appContext)
             updateSholluWidgets(appContext)
             RepairOutcome.Success
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             RepairOutcome.Failure(AlarmHealth.classifyRepairFailure(t), t.message)
         }

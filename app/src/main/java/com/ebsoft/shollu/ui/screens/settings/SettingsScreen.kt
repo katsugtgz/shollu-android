@@ -91,6 +91,9 @@ fun SettingsScreen(
     var isHealthRefreshFailed by remember { mutableStateOf(false) }
     var healthRepairOutcome by remember { mutableStateOf<RepairOutcome?>(null) }
     var isHealthExpanded by remember { mutableStateOf(false) }
+    // Busy guard for the full repair path: while one repair (+ its trailing re-probe) runs,
+    // further taps on "Perbaiki Jadwal Alarm" are ignored — never two concurrent sweeps.
+    var isHealthRepairing by remember { mutableStateOf(false) }
 
     // Pure mutation matrix (JVM-tested): decide WHICH effects each control triggers; this
     // composable only supplies the Android plumbing behind the injected seams.
@@ -210,11 +213,19 @@ fun SettingsScreen(
     // gathers concurrently.
     val healthRefreshMutex = remember { Mutex() }
 
-    fun performHealthRefresh() {
+    // [clearOutcome] = false on the repair path's trailing refresh only: a repair verdict
+    // just produced must stay visible until the NEXT NATURAL refresh (entry/ON_RESUME) lands
+    // a fresh report — only then is the stale "Perbaikan selesai" cleared.
+    fun performHealthRefresh(clearOutcome: Boolean = true) {
         val report = evaluateAlarmHealth()
         if (report != null) {
             healthReport = report
             isHealthRefreshFailed = false
+            if (clearOutcome) {
+                // A natural refresh that lands a fresh report invalidates a lingering repair
+                // verdict — an old success/failure must not sit under a newer report.
+                healthRepairOutcome = null
+            }
         } else {
             // A failed gather KEEPS the previous report on screen (the card never blanks) —
             // only a non-null result replaces it. The flag drives the retry row.
@@ -222,29 +233,38 @@ fun SettingsScreen(
         }
     }
 
-    fun refreshAlarmHealth(force: Boolean = false) {
+    fun refreshAlarmHealth(force: Boolean = false, clearOutcome: Boolean = true) {
         if (healthRefreshMutex.tryLock()) {
             launchSetting {
                 try {
-                    performHealthRefresh()
+                    performHealthRefresh(clearOutcome)
                 } finally {
                     healthRefreshMutex.unlock()
                 }
             }
         } else if (force) {
             launchSetting {
-                healthRefreshMutex.withLock { performHealthRefresh() }
+                healthRefreshMutex.withLock { performHealthRefresh(clearOutcome) }
             }
         }
     }
 
     // Repair goes through the SettingsActions seam (actions.repairAlarms) so the effect
     // matrix stays the single place effect routing is decided; the trailing refresh re-probes
-    // the fleet the repair just rebuilt.
+    // the fleet the repair just rebuilt (clearOutcome = false — the fresh verdict stays).
+    // The busy guard is checked and set SYNCHRONOUSLY so a rapid double-tap can never launch
+    // a second full sweep; the flag resets in finally, after the repair and its trailing
+    // refresh have been driven to completion.
     fun launchAlarmRepair() {
+        if (isHealthRepairing) return
+        isHealthRepairing = true
         launchSetting {
-            healthRepairOutcome = actions.repairAlarms()
-            refreshAlarmHealth(force = true)
+            try {
+                healthRepairOutcome = actions.repairAlarms()
+                refreshAlarmHealth(force = true, clearOutcome = false)
+            } finally {
+                isHealthRepairing = false
+            }
         }
     }
 
@@ -462,6 +482,7 @@ fun SettingsScreen(
                 expanded = isHealthExpanded,
                 stale = isHealthStale,
                 refreshFailed = isHealthRefreshFailed,
+                isRepairing = isHealthRepairing,
                 onToggleExpanded = { isHealthExpanded = !isHealthExpanded },
                 onRetryRefresh = { refreshAlarmHealth() },
                 onRepair = { launchAlarmRepair() },

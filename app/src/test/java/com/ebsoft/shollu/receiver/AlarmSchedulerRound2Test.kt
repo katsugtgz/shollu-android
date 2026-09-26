@@ -265,7 +265,7 @@ class AlarmSchedulerRound2Test {
         }
     }
 
-    /** Namespace floor: every window code stays under 2,000,000 and the set splits even/odd 10/10. */
+    /** Namespace floor: every window code stays below the snooze namespace and the set splits even/odd 10/10. */
     @Test
     fun testAllWindowRequestCodesStayBelowTwoMillionWithBalancedParity() {
         val today = LocalDate.of(2026, 8, 29)
@@ -274,9 +274,9 @@ class AlarmSchedulerRound2Test {
         val codes = AlarmScheduler.allWindowRequestCodes(window)
 
         assertTrue(
-            "all window codes must stay under 2,000,000 — above sit the snooze (1,990,000) " +
-                "and reminder (20,000,000 + id) namespaces; 100-year disjointness is proven elsewhere",
-            codes.all { it in 0 until 2_000_000 }
+            "all window codes must stay below the snooze namespace (1,990,000) — above sit " +
+                "the snooze and reminder (20,000,000 + id) namespaces; 100-year disjointness is proven elsewhere",
+            codes.all { it < AlarmScheduler.getSnoozeRequestCode() }
         )
         assertEquals("10 even MAIN codes in a 2-date window", 10, codes.count { it % 2 == 0 })
         assertEquals("10 odd PRE codes in a 2-date window", 10, codes.count { it % 2 == 1 })
