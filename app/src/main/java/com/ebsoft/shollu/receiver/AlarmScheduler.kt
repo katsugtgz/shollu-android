@@ -102,6 +102,19 @@ object AlarmScheduler {
         }
 
     /**
+     * EVERY request code the 48h arm-or-cancel sweep ([scheduleNextPrayerAlarms]) can own for
+     * [windowDates]: BOTH codes (main + pre-prayer) of all 5 major prayers per date — 20 codes
+     * for the 2-date window. NO validity filter, mirroring the sweep which touches every slot
+     * (polar-invalid Subuh/Isya included) to arm-or-cancel. Health-center use: a read-only
+     * fleet probe enumerates exactly this space and looks each code up via AlarmManager
+     * NO_CREATE — probing never arms, cancels, or mutates anything.
+     */
+    fun allWindowRequestCodes(windowDates: List<LocalDate>): Set<Int> =
+        windowDates.flatMap { date ->
+            MAJOR_PRAYERS.flatMap { type -> slotRequestCodes(date, type) }
+        }.toSet()
+
+    /**
      * BOTH request codes a (date, type) slot can own: main (even) + pre-prayer (odd).
      * A slot that will not be armed this run must have BOTH cancelled — cancel is a no-op
      * when nothing is armed, so this is always safe.
@@ -253,6 +266,34 @@ object AlarmScheduler {
             probe,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         ) != null
+    }
+
+    /**
+     * Read-only AlarmManager walk for the health center: for every (requestCode, action) pair,
+     * look the PendingIntent up with FLAG_NO_CREATE | FLAG_IMMUTABLE — the SAME filterEquals
+     * surface (component + action; extras excluded) [fleetIsArmed] and [cancelPendingAlarm]
+     * use — and return the codes that are actually armed. Deliberately untested per repo
+     * convention (Android call site): the code space and parity formula it replays live in the
+     * JVM-tested [allWindowRequestCodes] / [getRequestCode].
+     *
+     * PROBING NEVER CREATES, ARMS, OR CANCELS ANYTHING. Returns null on any throw so a
+     * diagnostic read can report UNKNOWN instead of a partial, misleading set.
+     */
+    internal fun probeArmedRequestCodes(context: Context, probes: List<Pair<Int, String>>): Set<Int>? = try {
+        probes.mapNotNull { (requestCode, action) ->
+            val intent = Intent(context, PrayerAlarmReceiver::class.java).apply {
+                this.action = action
+            }
+            val live = PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (live != null) requestCode else null
+        }.toSet()
+    } catch (e: Exception) {
+        null
     }
 
     /**

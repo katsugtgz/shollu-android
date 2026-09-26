@@ -20,8 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.ebsoft.shollu.SholluApplication
 import com.ebsoft.shollu.data.model.*
 import com.ebsoft.shollu.data.preferences.SholluPreferences
@@ -30,9 +33,21 @@ import com.ebsoft.shollu.receiver.AlarmScheduler
 import com.ebsoft.shollu.service.FloatingDropzoneService
 import com.ebsoft.shollu.service.OngoingNotificationService
 import com.ebsoft.shollu.service.VibrationAlarmService
+import com.ebsoft.shollu.ui.screens.settings.health.AlarmHealthProbes
+import com.ebsoft.shollu.ui.screens.settings.health.AlarmHealthReport
+import com.ebsoft.shollu.ui.screens.settings.health.AlarmHealthSection
+import com.ebsoft.shollu.ui.screens.settings.health.RepairOutcome
+import com.ebsoft.shollu.ui.screens.settings.health.RemediationIntent
+import com.ebsoft.shollu.ui.util.appDetailsSettingsIntent
+import com.ebsoft.shollu.ui.util.batteryOptimizationListIntent
+import com.ebsoft.shollu.ui.util.exactAlarmSettingsIntent
+import com.ebsoft.shollu.ui.util.notificationSettingsIntent
+import com.ebsoft.shollu.ui.util.rememberTickMillis
 import com.ebsoft.shollu.widget.updateSholluWidgets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Composable
 fun SettingsScreen(
@@ -65,6 +80,17 @@ fun SettingsScreen(
     var showMethodDialog by remember { mutableStateOf(false) }
     var showAsrDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+
+    // Pusat Kesehatan Alarm state. Null report = never probed or the probe failed — the
+    // section then renders the honest "Memeriksa status alarm…" placeholder, never a
+    // fake-healthy state. A refresh never clears the previous report up front, so the card
+    // keeps rendering the old snapshot while the new one is gathered — and when a gather
+    // FAILS the old snapshot is kept for good (only a non-null result replaces it), with
+    // [isHealthRefreshFailed] driving the section's tap-to-retry row instead.
+    var healthReport by remember { mutableStateOf<AlarmHealthReport?>(null) }
+    var isHealthRefreshFailed by remember { mutableStateOf(false) }
+    var healthRepairOutcome by remember { mutableStateOf<RepairOutcome?>(null) }
+    var isHealthExpanded by remember { mutableStateOf(false) }
 
     // Pure mutation matrix (JVM-tested): decide WHICH effects each control triggers; this
     // composable only supplies the Android plumbing behind the injected seams.
@@ -141,12 +167,116 @@ fun SettingsScreen(
                         Uri.parse("package:${context.packageName}")
                     )
                 )
-            }
+            },
+            runAlarmRepair = { AlarmHealthProbes.runRepair(context) }
         )
+    }
+
+    // Pusat Kesehatan Alarm plumbing (Android-touching, injected as lambdas exactly like
+    // SettingsActions' seams): the read-only probe and the three remediation intent openers.
+    // The openers delegate to the shared pure builders in ui/util/SystemSettingsIntents.kt —
+    // the same idiom MainActivity uses — and only run on the user's explicit tap.
+    val evaluateAlarmHealth = remember(context, preferences) {
+        { AlarmHealthProbes.evaluateNow(context, preferences) }
+    }
+    val openExactAlarmSettings = remember(context) {
+        {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.startActivity(exactAlarmSettingsIntent(context.packageName))
+            }
+        }
+    }
+    val openNotificationSettings = remember(context) {
+        { context.startActivity(notificationSettingsIntent(context.packageName)) }
+    }
+    val openBatterySettings = remember(context) {
+        { context.startActivity(batteryOptimizationListIntent()) }
+    }
+    val openAppInfoSettings = remember(context) {
+        { context.startActivity(appDetailsSettingsIntent(context.packageName)) }
     }
 
     fun launchSetting(block: suspend () -> Unit) {
         settingsScope.launch(Dispatchers.IO) { block() }
+    }
+
+    // --- Pusat Kesehatan Alarm wiring ---------------------------------------------------
+    // Refresh = READ-ONLY probes (AlarmHealthProbes.evaluateNow never arms/cancels/mutates
+    // alarms) on settingsScope + IO so they survive navigation.
+    // Single-flight mechanism (one line, per FIX 13): a remembered Mutex guarded by tryLock —
+    // a non-forced call that hits a busy mutex is DROPPED (the in-flight gather's result is
+    // fresher than the trigger), while a forced call (post-repair) suspends on withLock and
+    // queues behind it — so the entry effect, ON_RESUME, and a manual tap can never run two
+    // gathers concurrently.
+    val healthRefreshMutex = remember { Mutex() }
+
+    fun performHealthRefresh() {
+        val report = evaluateAlarmHealth()
+        if (report != null) {
+            healthReport = report
+            isHealthRefreshFailed = false
+        } else {
+            // A failed gather KEEPS the previous report on screen (the card never blanks) —
+            // only a non-null result replaces it. The flag drives the retry row.
+            isHealthRefreshFailed = true
+        }
+    }
+
+    fun refreshAlarmHealth(force: Boolean = false) {
+        if (healthRefreshMutex.tryLock()) {
+            launchSetting {
+                try {
+                    performHealthRefresh()
+                } finally {
+                    healthRefreshMutex.unlock()
+                }
+            }
+        } else if (force) {
+            launchSetting {
+                healthRefreshMutex.withLock { performHealthRefresh() }
+            }
+        }
+    }
+
+    // Repair goes through the SettingsActions seam (actions.repairAlarms) so the effect
+    // matrix stays the single place effect routing is decided; the trailing refresh re-probes
+    // the fleet the repair just rebuilt.
+    fun launchAlarmRepair() {
+        launchSetting {
+            healthRepairOutcome = actions.repairAlarms()
+            refreshAlarmHealth(force = true)
+        }
+    }
+
+    fun openAlarmRemediation(intent: RemediationIntent) {
+        when (intent) {
+            RemediationIntent.OPEN_EXACT_ALARM_SETTINGS -> openExactAlarmSettings()
+            RemediationIntent.OPEN_NOTIFICATION_SETTINGS -> openNotificationSettings()
+            RemediationIntent.OPEN_BATTERY_SETTINGS -> openBatterySettings()
+            RemediationIntent.OPEN_APP_INFO -> openAppInfoSettings()
+            RemediationIntent.RUN_REPAIR -> launchAlarmRepair()
+            RemediationIntent.NONE -> Unit
+        }
+    }
+
+    // Refresh on entry, then on every ON_RESUME — the latter covers the return from the
+    // system screens the remediation intents open. The resume refresh only PROBES; it never
+    // auto-fires a remediation intent.
+    LaunchedEffect(Unit) { refreshAlarmHealth() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshAlarmHealth()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Staleness re-render key: the "· usang" hint must appear once the snapshot outlives its
+    // TTL even with no state change, so re-derive the comparison every 30s while started.
+    val healthTick = rememberTickMillis(intervalMillis = 30_000L)
+    val isHealthStale = remember(healthTick, healthReport) {
+        healthReport?.isStaleAgainst(System.currentTimeMillis()) ?: false
     }
 
     LazyColumn(
@@ -322,6 +452,22 @@ fun SettingsScreen(
                     }
                 )
             }
+        }
+
+        // Section 4: Pusat Kesehatan Alarm
+        item {
+            AlarmHealthSection(
+                report = healthReport,
+                repairOutcome = healthRepairOutcome,
+                expanded = isHealthExpanded,
+                stale = isHealthStale,
+                refreshFailed = isHealthRefreshFailed,
+                onToggleExpanded = { isHealthExpanded = !isHealthExpanded },
+                onRetryRefresh = { refreshAlarmHealth() },
+                onRepair = { launchAlarmRepair() },
+                onRunVibrationTest = { actions.runVibrationTest() },
+                onRemediation = { openAlarmRemediation(it) }
+            )
         }
     }
 

@@ -178,4 +178,107 @@ class AlarmSchedulerRound2Test {
         assertFalse(AlarmScheduler.shouldReshowExactAlarmPrompt(stillDenied = false, awaitingGrant = true))
         assertFalse(AlarmScheduler.shouldReshowExactAlarmPrompt(stillDenied = true, awaitingGrant = false))
     }
+
+    // =========================================================================
+    // Health-center seam: allWindowRequestCodes = the read-only fleet probe's
+    // code space over the 48h window. The probe must inspect EXACTLY the codes
+    // the arm-or-cancel sweep can own — never more (would read foreign slots),
+    // never fewer (would miss an armed stale slot).
+    // =========================================================================
+
+    /** 5 major prayers x 2 codes (main+pre) x 2 window dates = 20 DISTINCT codes. */
+    @Test
+    fun testAllWindowRequestCodesAreTwentyUniqueCodesForTwoDateWindow() {
+        val today = LocalDate.of(2026, 8, 29)
+        val window = listOf(today, today.plusDays(1))
+
+        val codes = AlarmScheduler.allWindowRequestCodes(window)
+
+        assertEquals(
+            "5 prayers x 2 codes x 2 dates must yield 20 unique request codes " +
+                "(any duplicate would make the probe misattribute one slot's state to another)",
+            20,
+            codes.size
+        )
+    }
+
+    /**
+     * The window code space is exactly the union of [slotRequestCodes] over every
+     * (date, type) the sweep walks via [allPrayerSlots] — and validity plays NO role:
+     * a polar-invalid Subuh/Isya slot is still swept (arm-or-cancel), so its codes
+     * must still appear.
+     */
+    @Test
+    fun testAllWindowRequestCodesEqualSlotRequestCodeUnionWithNoValidityFilter() {
+        val times = fixedTimes()
+        val polar = fixedTimes().copy(isSubuhValid = false, isIsyaValid = false)
+        val today = LocalDate.of(2026, 8, 29)
+        val window = listOf(today, today.plusDays(1))
+
+        val sweptCodes = window.flatMap { date ->
+            AlarmScheduler.allPrayerSlots(times, date).flatMap { (type, _, slotDate) ->
+                AlarmScheduler.slotRequestCodes(slotDate, type)
+            }
+        }.toSet()
+        val polarSweptCodes = window.flatMap { date ->
+            AlarmScheduler.allPrayerSlots(polar, date).flatMap { (type, _, slotDate) ->
+                AlarmScheduler.slotRequestCodes(slotDate, type)
+            }
+        }.toSet()
+
+        assertEquals(
+            "window code space must equal the sweep's arm-or-cancel code space",
+            sweptCodes,
+            AlarmScheduler.allWindowRequestCodes(window)
+        )
+        assertEquals(
+            "no validity filter: polar-invalid Subuh/Isya still contribute both codes",
+            polarSweptCodes,
+            AlarmScheduler.allWindowRequestCodes(window)
+        )
+    }
+
+    /** Parity invariant: even code = main alarm, odd code = pre-prayer alarm, per getRequestCode. */
+    @Test
+    fun testAllWindowRequestCodesPreserveEvenMainOddPreParity() {
+        val today = LocalDate.of(2026, 8, 29)
+        val window = listOf(today, today.plusDays(1))
+        val types = listOf(
+            PrayerType.SUBUH, PrayerType.DZUHUR, PrayerType.ASHAR, PrayerType.MAGHRIB, PrayerType.ISYA
+        )
+
+        val mainCodes = window.flatMap { date ->
+            types.map { AlarmScheduler.getRequestCode(date, it, isPrePrayer = false) }
+        }.toSet()
+        val preCodes = window.flatMap { date ->
+            types.map { AlarmScheduler.getRequestCode(date, it, isPrePrayer = true) }
+        }.toSet()
+
+        val codes = AlarmScheduler.allWindowRequestCodes(window)
+        assertEquals("set must be exactly the derived main+pre codes", mainCodes + preCodes, codes)
+        codes.forEach { code ->
+            if (code % 2 == 0) {
+                assertTrue("even code $code must be a MAIN alarm code of a window slot", code in mainCodes)
+            } else {
+                assertTrue("odd code $code must be a PRE-PRAYER alarm code of a window slot", code in preCodes)
+            }
+        }
+    }
+
+    /** Namespace floor: every window code stays under 2,000,000 and the set splits even/odd 10/10. */
+    @Test
+    fun testAllWindowRequestCodesStayBelowTwoMillionWithBalancedParity() {
+        val today = LocalDate.of(2026, 8, 29)
+        val window = listOf(today, today.plusDays(1))
+
+        val codes = AlarmScheduler.allWindowRequestCodes(window)
+
+        assertTrue(
+            "all window codes must stay under 2,000,000 — above sit the snooze (1,990,000) " +
+                "and reminder (20,000,000 + id) namespaces; 100-year disjointness is proven elsewhere",
+            codes.all { it in 0 until 2_000_000 }
+        )
+        assertEquals("10 even MAIN codes in a 2-date window", 10, codes.count { it % 2 == 0 })
+        assertEquals("10 odd PRE codes in a 2-date window", 10, codes.count { it % 2 == 1 })
+    }
 }
