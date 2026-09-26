@@ -3,6 +3,7 @@ package com.ebsoft.shollu.ui.screens.settings
 import com.ebsoft.shollu.data.model.AsrJuristic
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import com.ebsoft.shollu.ui.screens.settings.health.RepairOutcome
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -68,6 +69,7 @@ class SettingsActions(
     private val setDropzoneRunning: (start: Boolean) -> Unit,
     private val hasOverlayPermission: () -> Boolean,
     private val requestOverlayPermission: () -> Unit,
+    private val runAlarmRepair: suspend () -> RepairOutcome,
 ) {
 
     companion object {
@@ -179,4 +181,18 @@ class SettingsActions(
             requestOverlayPermission()
         }
     }
+
+    /**
+     * "Perbaiki Jadwal Alarm" (Pusat Kesehatan Alarm): run the full repair path through the
+     * injected adapter ([AlarmHealthProbes.runRepair] — prayer sweep + reminder reschedule +
+     * widget refresh) and pass its outcome through unchanged so the UI can render the exact
+     * failure kind. No preference write of its own.
+     *
+     * Deliberately NO [EffectLane]: unlike the matrix rows, this path performs no DataStore
+     * write, and the sweep inside the adapter takes AlarmScheduler.scheduleMutex — the same
+     * lock every other reschedule path (including the lanes' rescheduleAlarms calls) must
+     * already hold — so concurrent taps serialize there. A lane lock would buy no ordering
+     * the mutex does not already enforce.
+     */
+    suspend fun repairAlarms(): RepairOutcome = runAlarmRepair()
 }

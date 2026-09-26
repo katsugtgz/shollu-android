@@ -41,6 +41,7 @@ import com.ebsoft.shollu.ui.screens.scheduler.SchedulerScreen
 import com.ebsoft.shollu.ui.screens.settings.LocationPickerDialog
 import com.ebsoft.shollu.ui.screens.settings.SettingsScreen
 import com.ebsoft.shollu.ui.theme.SholluTheme
+import com.ebsoft.shollu.ui.util.exactAlarmSettingsIntent
 import com.ebsoft.shollu.data.update.InstallResult
 import com.ebsoft.shollu.data.update.UpdateCheck
 import com.ebsoft.shollu.data.update.UpdateOffer
@@ -419,11 +420,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestExactAlarmPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
-        startActivity(
-            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                data = Uri.parse("package:$packageName")
-            }
-        )
+        startActivity(exactAlarmSettingsIntent(packageName))
     }
 
     private fun autoDetectLocation() {

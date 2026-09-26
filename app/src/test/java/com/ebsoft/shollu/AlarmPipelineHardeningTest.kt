@@ -10,6 +10,8 @@ import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
 import com.ebsoft.shollu.receiver.AlarmScheduler
+import com.ebsoft.shollu.ui.screens.settings.health.AlarmHealth
+import com.ebsoft.shollu.ui.screens.settings.health.AlarmHealthPlanInput
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.receiver.ReminderAlarmScheduler
 import kotlinx.coroutines.Dispatchers
@@ -713,6 +715,52 @@ class AlarmPipelineHardeningTest {
         assertEquals(
             "only the pre sweep + today's passed main Subuh are cancelled",
             expectedPreCancels.size + 1, actualCancels.size
+        )
+    }
+
+    // =========================================================================
+    // Health-center drift guard: planExpectedFleet == the sweep's ARM ops
+    // =========================================================================
+
+    /**
+     * The health center's ARMED_FLEET check diffs AlarmManager NO_CREATE probe results against
+     * [AlarmHealth.planExpectedFleet] — if that plan ever drifted from the sweep's own arm
+     * decisions, the UI would demand repair for a perfectly correct fleet, or bless a broken
+     * one. Same fixture seam as the churn-guard suite above ([baselineArmSnapshot] /
+     * [mirrorSweepOps]): over ONE snapshot the plan's request codes must equal the mirrored
+     * sweep's ARM ops exactly — no extras, none missing — and never overlap its cancel set.
+     */
+    @Test
+    fun testHealthPlanExpectedFleetArmCodesMatchSweepArmOperationsExactly() {
+        val base = baselineArmSnapshot()
+        val cityTz = base.city.timezone
+        val window = AlarmScheduler.getSchedulingWindow(base.now)
+
+        val planCodes = AlarmHealth.planExpectedFleet(
+            AlarmHealthPlanInput(
+                nowEpochMillis = AlarmTime.epochMillisForCity(base.now, cityTz),
+                cityTimezoneHours = cityTz,
+                todayTimes = fixedTimes().copy(date = window.first()),
+                tomorrowTimes = fixedTimes().copy(date = window.last()),
+                isPrePrayerAlertEnabled = base.preEnabled,
+                prePrayerMinutes = base.preMinutes
+            )
+        ).map { it.requestCode }.toSet()
+
+        val sweepOps = mirrorSweepOps(base)
+        val armCodes = sweepOps.filter { it.startsWith("arm:") }
+            .map { it.substringAfter(':').toInt() }.toSet()
+        val cancelCodes = sweepOps.filter { it.startsWith("cancel:") }
+            .map { it.substringAfter(':').toInt() }.toSet()
+
+        assertEquals(
+            "the health plan must arm exactly the sweep's ARM set — an extra code would fake " +
+                "stale settings, a missing one would hide a dead alarm",
+            armCodes, planCodes
+        )
+        assertTrue(
+            "a planned code must never sit in the sweep's explicit-cancel set",
+            planCodes.none { it in cancelCodes }
         )
     }
 

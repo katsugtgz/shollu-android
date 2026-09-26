@@ -3,6 +3,8 @@ package com.ebsoft.shollu.ui.screens.settings
 import com.ebsoft.shollu.data.model.AsrJuristic
 import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.ThemeMode
+import com.ebsoft.shollu.ui.screens.settings.health.RepairFailureKind
+import com.ebsoft.shollu.ui.screens.settings.health.RepairOutcome
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.joinAll
@@ -29,6 +31,7 @@ class SettingsActionsTest {
         fun widget() = events.add("widget")
         fun service(op: String) = events.add("service:$op")
         fun permission(op: String) = events.add("permission:$op")
+        fun repair(outcome: String) = events.add("repair:$outcome")
     }
 
     /** Mutable mirror of the DataStore keys the matrix writes, for clamping assertions. */
@@ -44,7 +47,11 @@ class SettingsActionsTest {
         var ongoingEnabled: Boolean? = null
     }
 
-    private class Harness(val recorder: Recorder = Recorder()) {
+    private class Harness(
+        val recorder: Recorder = Recorder(),
+        /** Outcome the injected repair seam returns (recorded through the same [Recorder]). */
+        var repairResult: RepairOutcome = RepairOutcome.Success
+    ) {
         var overlayGranted = true
         var failNextWrite = false
 
@@ -117,7 +124,16 @@ class SettingsActionsTest {
             startVibrationTest = { recorder.service("vibrationTest") },
             setDropzoneRunning = { start -> recorder.service("dropzone=$start") },
             requestOverlayPermission = { recorder.permission("overlay") },
-            hasOverlayPermission = { overlayGranted }
+            hasOverlayPermission = { overlayGranted },
+            runAlarmRepair = {
+                recorder.repair(
+                    when (repairResult) {
+                        is RepairOutcome.Success -> "Success"
+                        is RepairOutcome.Failure -> "Failure"
+                    }
+                )
+                repairResult
+            }
         )
     }
 
@@ -388,5 +404,40 @@ class SettingsActionsTest {
 
         h.actions.toggleDropzone(start = false)
         assertTrue(h.recorder.events.contains("service:dropzone=false"))
+    }
+
+    // ---- Perbaiki Jadwal Alarm (Pusat Kesehatan Alarm): repair path ONLY ----
+
+    @Test
+    fun testRepairAlarmsDispatchesOnlyRepairEvent() = runTest {
+        // The health-center repair seam (runAlarmRepair) must dispatch ONLY the repair path:
+        // no DataStore write, no alarm reschedule, no widget refresh. The adapter's repair
+        // (AlarmScheduler.scheduleNextPrayerAlarms + ReminderAlarmScheduler + widget refresh)
+        // serializes on AlarmScheduler.scheduleMutex against every other reschedule path, so
+        // an EffectLane here would add nothing — and a duplicate reschedule/widget from THIS
+        // seam would double-sweep outside the matrix's one-effect-per-control contract.
+        val h = Harness()
+        val outcome = h.actions.repairAlarms()
+        assertEquals(RepairOutcome.Success, outcome)
+        assertEquals(
+            "repairAlarms harus menyisakan event perbaikan saja — tanpa write/reschedule/widget",
+            listOf("repair:Success"),
+            h.recorder.events
+        )
+    }
+
+    @Test
+    fun testRepairAlarmsPassesThroughFailure() = runTest {
+        // The injected outcome must pass through UNCHANGED so the UI can render the exact
+        // failure kind (izin sistem vs kegagalan penjadwalan) instead of a swallowed generic
+        // error that would make "Perbaiki Jadwal Alarm" look successful when it was not.
+        val failure = RepairOutcome.Failure(RepairFailureKind.SCHEDULING_ERROR, "sweep gagal")
+        val h = Harness(repairResult = failure)
+        val outcome = h.actions.repairAlarms()
+        assertEquals("Outcome gagal harus lolos apa adanya ke pemanggil", failure, outcome)
+        assertEquals(
+            listOf("repair:Failure"),
+            h.recorder.events
+        )
     }
 }
