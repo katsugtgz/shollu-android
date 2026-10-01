@@ -85,9 +85,12 @@ fun QiblaCompassScreen(
 ) {
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }
-    // Starts UNRELIABLE: until the sensor reports its accuracy we do not yet know the
-    // compass is calibrated, so the calibration hint (not confirmation) is the default.
+    // Mirrors [accuracyRegistry].effective (the minimum across the selected sensors) so
+    // accuracy changes recompose. Starts UNRELIABLE and is reset to UNRELIABLE on every
+    // ON_START: until the sensor reports its accuracy we do not yet know the compass is
+    // calibrated, so the calibration hint (not confirmation) is the default.
     var sensorAccuracy by remember { mutableIntStateOf(UNRELIABLE) }
+    val accuracyRegistry = remember { SensorAccuracyRegistry() }
     // Starts false: registration is owned by the lifecycle observer below (its addObserver
     // catch-up dispatch delivers ON_START when already STARTED), never by effect-body code.
     var sensorAvailable by remember { mutableStateOf(false) }
@@ -190,7 +193,17 @@ fun QiblaCompassScreen(
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-                sensorAccuracy = accuracy
+                if (sensor == null) return
+                // Per-sensor-type tracking: a HIGH accelerometer report must not mask a
+                // LOW magnetic one — the gate sees the minimum of what has reported.
+                accuracyRegistry.onAccuracyChanged(sensor.type, accuracy)
+                sensorAccuracy = accuracyRegistry.effective
+            }
+        }
+
+        fun unregisterAll() {
+            for (sensor in sensors) {
+                sensorManager.unregisterListener(listener, sensor)
             }
         }
 
@@ -215,27 +228,32 @@ fun QiblaCompassScreen(
             // Availability must be truthful (QiblaSensorGate): a half-registered accel+mag
             // pair is not a compass — both halves must have registered, while the
             // single-sensor sources (rotation vector, orientation) stand alone.
-            return compassRegistrationOk(
+            val ok = compassRegistrationOk(
                 rotationVectorRegistered,
                 accelRegistered,
                 magRegistered,
                 orientationRegistered
             )
-        }
-
-        fun unregisterAll() {
-            for (sensor in sensors) {
-                sensorManager.unregisterListener(listener, sensor)
+            if (!ok) {
+                // A half-registered pair must not keep streaming: the half that registered
+                // would fire ~60Hz events while the compass is reported unavailable.
+                unregisterAll()
             }
+            return ok
         }
 
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
                     // Drop state cached from the previous session before re-registering:
-                    // stale counterpart samples (accel/mag pair) and the pre-stop azimuth
-                    // must not read as fresh data for the new session.
+                    // stale counterpart samples (accel/mag pair), the previous session's
+                    // accuracy reports, and the pre-stop azimuth must not read as fresh
+                    // data for the new session. The composition survives tab switches, so
+                    // this reset — not the initial remember — owns the "starts UNRELIABLE"
+                    // invariant on every resume.
                     listener.reset()
+                    accuracyRegistry.reset()
+                    sensorAccuracy = accuracyRegistry.effective
                     freshSample = false
                     sensorAvailable = registerAll()
                 }

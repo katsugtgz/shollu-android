@@ -29,15 +29,15 @@ class OngoingNotificationService : Service() {
         /** Truthful running state: true only while the countdown notification is up. */
         val isRunning: StateFlow<Boolean> = _isRunning
 
+        // Guards runningSession + the isRunning flag, and serializes the post path
+        // (updateNotification's session check + startForeground) against the stop/removal
+        // path (stopOngoingCountdown / onDestroy) so a cancelled countdown's late post
+        // cannot run startForeground after the removal and resurrect the notification
+        // (foreground + posted while isRunning — and the Settings switch — say off).
         private val runningLock = Any()
         private var runningSession = 0
 
         private fun beginRunningSession(): Int = synchronized(runningLock) { ++runningSession }
-
-        /** A late startForeground from a cancelled countdown must not resurrect the switch. */
-        private fun publishRunning(session: Int) = synchronized(runningLock) {
-            if (runningSession == session) _isRunning.value = true
-        }
 
         private fun publishStopped() = synchronized(runningLock) {
             runningSession++
@@ -264,23 +264,35 @@ class OngoingNotificationService : Service() {
         }
 
         if (!postingEnabled) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        // postingEnabled is only a cheap non-atomic pre-gate; the locked session check
+        // below is the authoritative one. A session superseded by stopOngoingCountdown /
+        // onDestroy skips its startForeground entirely instead of resurrecting the
+        // notification the removal path just took down.
+        synchronized(runningLock) {
+            if (runningSession == session) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+                _isRunning.value = true
+            }
         }
-        publishRunning(session)
     }
 
     private fun stopOngoingCountdown() {
         postingEnabled = false
-        publishStopped()
         countdownJob?.cancel()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        // Same lock as the post path: the session bump + notification removal happen
+        // atomically against updateNotification's session check + startForeground.
+        synchronized(runningLock) {
+            publishStopped()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
         stopSelf()
     }
 
@@ -303,14 +315,16 @@ class OngoingNotificationService : Service() {
     override fun onDestroy() {
         postingEnabled = false
         countdownJob?.cancel()
-        try {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } catch (_: Exception) {
-            // Already torn down, or never started as FGS.
+        synchronized(runningLock) {
+            publishStopped()
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (_: Exception) {
+                // Already torn down, or never started as FGS.
+            }
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(NOTIFICATION_ID)
         }
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-            .cancel(NOTIFICATION_ID)
-        publishStopped()
         serviceScope.cancel()
         super.onDestroy()
     }

@@ -68,6 +68,27 @@ class ReminderDraftTest {
     }
 
     @Test
+    fun testHour24IsRejected() {
+        val result = validateReminderDraft(title = "Doa", hourText = "24", minuteText = "00")
+        val rejected = result as ReminderDraftResult.Rejected
+        assertEquals("Jam tidak valid", rejected.hourError)
+    }
+
+    @Test
+    fun testMinute60IsRejected() {
+        val result = validateReminderDraft(title = "Doa", hourText = "6", minuteText = "60")
+        val rejected = result as ReminderDraftResult.Rejected
+        assertEquals("Menit tidak valid", rejected.minuteError)
+    }
+
+    @Test
+    fun testNegativeHourIsRejected() {
+        val result = validateReminderDraft(title = "Doa", hourText = "-1", minuteText = "00")
+        val rejected = result as ReminderDraftResult.Rejected
+        assertEquals("Jam tidak valid", rejected.hourError)
+    }
+
+    @Test
     fun testEmptyMinuteIsRejected() {
         val result = validateReminderDraft(title = "Doa", hourText = "23", minuteText = "")
         val rejected = result as ReminderDraftResult.Rejected

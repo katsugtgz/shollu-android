@@ -40,6 +40,7 @@ import com.ebsoft.shollu.ui.screens.qibla.QiblaCompassScreen
 import com.ebsoft.shollu.ui.screens.scheduler.SchedulerScreen
 import com.ebsoft.shollu.ui.screens.settings.LocationPickerDialog
 import com.ebsoft.shollu.ui.screens.settings.SettingsScreen
+import com.ebsoft.shollu.ui.screens.settings.gpsTapLocationDenied
 import com.ebsoft.shollu.ui.screens.settings.notificationGrantIsDenied
 import com.ebsoft.shollu.ui.screens.settings.shouldAutoDetectLocation
 import com.ebsoft.shollu.ui.theme.SholluTheme
@@ -58,6 +59,9 @@ import kotlinx.coroutines.withContext
 
 import java.util.Locale
 
+/** Persisted so a recreation while the location dialog is open keeps the GPS tap alive. */
+private const val STATE_USER_ASKED_FOR_GPS = "userAskedForGps"
+
 class MainActivity : ComponentActivity() {
 
     private var fusedLocationClient: FusedLocationProviderClient? = null
@@ -69,7 +73,7 @@ class MainActivity : ComponentActivity() {
     private var showExactAlarmPrompt by mutableStateOf(false)
     private var awaitingExactAlarmGrant = false
 
-    /** Set only by the GPS button. Cold-start [requestAppPermissions] leaves this false. */
+    /** Set only by the GPS button (or restored from saved state). Cold-start [requestAppPermissions] leaves this false. */
     private var userAskedForGps = false
 
     /** True only for the launch that included POST_NOTIFICATIONS. Missing map entry is then a denial. */
@@ -94,6 +98,8 @@ class MainActivity : ComponentActivity() {
         userAskedForGps = false
         if (shouldAutoDetectLocation(askedForGps, locationGranted)) {
             autoDetectLocation()
+        } else if (gpsTapLocationDenied(askedForGps, locationGranted)) {
+            Toast.makeText(this, "Lokasi tidak diizinkan.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -111,6 +117,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The permission callback can arrive in a recreated Activity (dialog open across
+        // rotation/process death) — without this the GPS tap is lost and nothing runs.
+        userAskedForGps = savedInstanceState?.getBoolean(STATE_USER_ASKED_FOR_GPS, false) ?: false
         requestAppPermissions()
         if (needsExactAlarmPromptNow()) {
             showExactAlarmPrompt = true
@@ -347,6 +356,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_USER_ASKED_FOR_GPS, userAskedForGps)
     }
 
     override fun onResume() {

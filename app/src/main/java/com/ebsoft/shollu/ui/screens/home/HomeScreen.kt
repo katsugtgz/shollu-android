@@ -2,7 +2,6 @@ package com.ebsoft.shollu.ui.screens.home
 
 import android.content.Context
 import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -180,14 +179,16 @@ fun HomeScreen(
                             when (action.id) {
                                 QuickActionId.QIBLA -> onNavigateToQibla()
                                 QuickActionId.SCHEDULE -> onNavigateToCalendar()
-                                QuickActionId.SHARE -> shareTodaySchedule(
-                                    context = context,
-                                    city = selectedCity,
-                                    times = citySchedule?.first,
-                                    hijriDate = hijriDate.formatDisplay(),
-                                    today = cityToday,
-                                    locale = appLocale
-                                )
+                                QuickActionId.SHARE -> citySchedule?.let { schedule ->
+                                    shareTodaySchedule(
+                                        context = context,
+                                        city = selectedCity,
+                                        times = schedule.first,
+                                        hijriDate = hijriDate.formatDisplay(),
+                                        today = cityToday,
+                                        locale = appLocale
+                                    )
+                                }
                             }
                         },
                         enabled = action.id != QuickActionId.SHARE ||
@@ -307,19 +308,16 @@ private fun quickActionIcon(id: QuickActionId): ImageVector = when (id) {
     QuickActionId.SHARE -> Icons.Default.Share
 }
 
+// Only invoked from the Share quick action, whose enabled state is gated by
+// canShareTodaySchedule — a null or unshareable schedule never reaches this handler.
 private fun shareTodaySchedule(
     context: Context,
     city: City,
-    times: PrayerTimes?,
+    times: PrayerTimes,
     hijriDate: String,
     today: LocalDate,
     locale: Locale = Locale.getDefault()
 ) {
-    val schedule = times?.takeIf { canShareTodaySchedule(it) }
-    if (schedule == null) {
-        Toast.makeText(context, "Jadwal belum siap", Toast.LENGTH_SHORT).show()
-        return
-    }
     val timezoneLabel = AlarmTime.timezoneLabel(city.timezone)
     val text = buildString {
         appendLine("🕌 JADWAL SHOLAT HARI INI")
@@ -327,14 +325,14 @@ private fun shareTodaySchedule(
         appendLine("📅 Masehi: ${today.format(DateTimeFormatter.ofPattern("d MMMM yyyy", locale))}")
         appendLine("🌙 Hijriyah: $hijriDate")
         appendLine("------------------------------")
-        appendLine("• Imsak   : ${schedule.displayTime(PrayerType.IMSAK)} $timezoneLabel")
-        appendLine("• Subuh   : ${schedule.displayTime(PrayerType.SUBUH)} $timezoneLabel")
-        appendLine("• Terbit  : ${schedule.displayTime(PrayerType.TERBIT)} $timezoneLabel")
-        appendLine("• Dhuha   : ${schedule.displayTime(PrayerType.DHUHA)} $timezoneLabel")
-        appendLine("• Dzuhur  : ${schedule.displayTime(PrayerType.DZUHUR)} $timezoneLabel")
-        appendLine("• Ashar   : ${schedule.displayTime(PrayerType.ASHAR)} $timezoneLabel")
-        appendLine("• Maghrib : ${schedule.displayTime(PrayerType.MAGHRIB)} $timezoneLabel")
-        appendLine("• Isya    : ${schedule.displayTime(PrayerType.ISYA)} $timezoneLabel")
+        appendLine("• Imsak   : ${times.displayTime(PrayerType.IMSAK)} $timezoneLabel")
+        appendLine("• Subuh   : ${times.displayTime(PrayerType.SUBUH)} $timezoneLabel")
+        appendLine("• Terbit  : ${times.displayTime(PrayerType.TERBIT)} $timezoneLabel")
+        appendLine("• Dhuha   : ${times.displayTime(PrayerType.DHUHA)} $timezoneLabel")
+        appendLine("• Dzuhur  : ${times.displayTime(PrayerType.DZUHUR)} $timezoneLabel")
+        appendLine("• Ashar   : ${times.displayTime(PrayerType.ASHAR)} $timezoneLabel")
+        appendLine("• Maghrib : ${times.displayTime(PrayerType.MAGHRIB)} $timezoneLabel")
+        appendLine("• Isya    : ${times.displayTime(PrayerType.ISYA)} $timezoneLabel")
         appendLine("------------------------------")
         appendLine("Dihitung secara akurat dengan Shollu")
     }

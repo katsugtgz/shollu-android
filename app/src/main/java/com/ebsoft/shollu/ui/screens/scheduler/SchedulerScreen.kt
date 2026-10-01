@@ -269,7 +269,10 @@ private fun AddReminderDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = title,
-                    onValueChange = { title = it },
+                    onValueChange = {
+                        title = it
+                        titleError = null
+                    },
                     label = { Text("Judul Agenda / Doa") },
                     placeholder = { Text("Contoh: Membaca Al-Qur'an 1 Juz") },
                     isError = titleError != null,
@@ -291,7 +294,10 @@ private fun AddReminderDialog(
                 ) {
                     OutlinedTextField(
                         value = hourField.text,
-                        onValueChange = { hourField.onValueChange(it) },
+                        onValueChange = {
+                            hourField.onValueChange(it)
+                            hourError = null
+                        },
                         label = { Text("Jam (0-23)") },
                         isError = hourError != null,
                         supportingText = hourError?.let { message -> { Text(message) } },
@@ -300,7 +306,10 @@ private fun AddReminderDialog(
                     Text(":", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                     OutlinedTextField(
                         value = minuteField.text,
-                        onValueChange = { minuteField.onValueChange(it) },
+                        onValueChange = {
+                            minuteField.onValueChange(it)
+                            minuteError = null
+                        },
                         label = { Text("Menit (0-59)") },
                         isError = minuteError != null,
                         supportingText = minuteError?.let { message -> { Text(message) } },
@@ -318,7 +327,8 @@ private fun AddReminderDialog(
         },
         confirmButton = {
             Button(
-                enabled = title.isNotBlank(),
+                // Always clickable: validation runs on save so a blank title surfaces
+                // inline via titleError instead of a disabled button that hides it.
                 onClick = {
                     when (val result = validateReminderDraft(title, hourField.text, minuteField.text)) {
                         is ReminderDraftResult.Accepted -> {

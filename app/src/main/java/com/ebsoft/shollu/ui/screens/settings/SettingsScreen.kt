@@ -421,15 +421,7 @@ fun SettingsScreen(
                         icon = Icons.Default.Alarm,
                         title = "Alarm tepat tidak diizinkan",
                         subtitle = "Ketuk untuk mengizinkan alarm dan pengingat tepat waktu.",
-                        onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                                        data = Uri.parse("package:${context.packageName}")
-                                    }
-                                )
-                            }
-                        }
+                        onClick = openExactAlarmSettings
                     )
                     SettingsDivider()
                 }

@@ -58,19 +58,27 @@ fun LocationPickerDialog(
         cityRepository.allCities.map<List<City>, List<City>?> { it }
     }
     val catalog by catalogFlow.collectAsState(initial = null)
-    val catalogLoaded = catalog != null
+    // Empty emission = boot-time seeding still in flight, NOT a loaded empty catalog.
+    val catalogLoaded = isCatalogLoaded(catalog)
     val allCities = catalog.orEmpty()
     val textFieldState = rememberTextFieldState()
     val searchBarState = rememberSearchBarState()
     val scope = rememberCoroutineScope()
+    // Set on the GPS tap; the fix resolves by either closing this dialog (success — the
+    // parent dismisses it) or leaving it open (failure — dismiss and reopen to pick
+    // manually). While pending, city taps are ignored so a selection cannot be
+    // clobbered by the incoming GPS write.
+    var gpsFixPending by remember { mutableStateOf(false) }
 
     val query = textFieldState.text.toString()
     val cities = remember(allCities, query) { filterCities(allCities, query) }
     val searchMessage = citySearchMessage(query, cities.size, catalogLoaded)
 
     val selectCity: (City) -> Unit = { city ->
-        onCitySelected(city)
-        onDismiss()
+        if (cityTapCommitsImmediately(gpsFixPending)) {
+            onCitySelected(city)
+            onDismiss()
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -112,8 +120,8 @@ fun LocationPickerDialog(
                 // GPS Auto Detect Button
                 Button(
                     onClick = {
+                        gpsFixPending = true
                         onAutoGpsClick()
-                        if (gpsTapDismissesPicker()) onDismiss()
                     },
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
