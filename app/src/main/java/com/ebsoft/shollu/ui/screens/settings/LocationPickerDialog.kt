@@ -64,10 +64,10 @@ fun LocationPickerDialog(
     val textFieldState = rememberTextFieldState()
     val searchBarState = rememberSearchBarState()
     val scope = rememberCoroutineScope()
-    // Set on the GPS tap; the fix resolves by either closing this dialog (success — the
-    // parent dismisses it) or leaving it open (failure — dismiss and reopen to pick
-    // manually). While pending, city taps are ignored so a selection cannot be
-    // clobbered by the incoming GPS write.
+    // Set on the GPS tap; the fix always terminates by closing this dialog (success —
+    // the parent dismisses after the write; failure — the parent closes with a toast).
+    // While pending, city taps are ignored so a tap landing in the window before the
+    // close cannot be clobbered by the incoming GPS write.
     var gpsFixPending by remember { mutableStateOf(false) }
 
     val query = textFieldState.text.toString()

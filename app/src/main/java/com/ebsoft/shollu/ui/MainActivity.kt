@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
         if (shouldAutoDetectLocation(askedForGps, locationGranted)) {
             autoDetectLocation()
         } else if (gpsTapLocationDenied(askedForGps, locationGranted)) {
-            Toast.makeText(this, "Lokasi tidak diizinkan.", Toast.LENGTH_SHORT).show()
+            gpsFixFailed("Lokasi tidak diizinkan.")
         }
     }
 
@@ -473,12 +473,22 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    /**
+     * A GPS fix terminated without a result: surface the reason and close the picker so
+     * it cannot linger as a tap-blocked list (the dialog's gpsFixPending only clears on
+     * disposal). Harmless when no picker is open.
+     */
+    private fun gpsFixFailed(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        showLocationPicker = false
+    }
+
     private fun autoDetectLocation() {
         val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
         if (!fineGranted && !coarseGranted) {
-            Toast.makeText(this, "Izin lokasi diperlukan untuk deteksi otomatis", Toast.LENGTH_SHORT).show()
+            gpsFixFailed("Izin lokasi diperlukan untuk deteksi otomatis")
             return
         }
 
@@ -505,8 +515,14 @@ class MainActivity : ComponentActivity() {
     private fun requestCurrentLocationFallback() {
         val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted && !coarseGranted) return
-        val client = fusedLocationClient ?: return
+        if (!fineGranted && !coarseGranted) {
+            gpsFixFailed("Izin lokasi diperlukan untuk deteksi otomatis")
+            return
+        }
+        val client = fusedLocationClient ?: run {
+            gpsFixFailed("Gagal mendeteksi lokasi")
+            return
+        }
 
         try {
             client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
@@ -554,13 +570,13 @@ class MainActivity : ComponentActivity() {
                 if (bestLocation != null) {
                     processLocation(bestLocation)
                 } else {
-                    Toast.makeText(this, "Tidak dapat mendeteksi lokasi saat ini", Toast.LENGTH_SHORT).show()
+                    gpsFixFailed("Tidak dapat mendeteksi lokasi saat ini")
                 }
             } else {
-                Toast.makeText(this, "Gagal mendeteksi lokasi", Toast.LENGTH_SHORT).show()
+                gpsFixFailed("Gagal mendeteksi lokasi")
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Gagal mendeteksi lokasi", Toast.LENGTH_SHORT).show()
+            gpsFixFailed("Gagal mendeteksi lokasi")
         }
     }
 
