@@ -24,6 +24,7 @@ import com.ebsoft.shollu.data.model.CalculationMethod
 import com.ebsoft.shollu.data.model.City
 import com.ebsoft.shollu.data.model.PrayerTimes
 import com.ebsoft.shollu.data.model.PrayerType
+import com.ebsoft.shollu.data.model.canShareTodaySchedule
 import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.engine.HijriCalendarHelper
 import com.ebsoft.shollu.receiver.AlarmTime
@@ -178,16 +179,20 @@ fun HomeScreen(
                             when (action.id) {
                                 QuickActionId.QIBLA -> onNavigateToQibla()
                                 QuickActionId.SCHEDULE -> onNavigateToCalendar()
-                                QuickActionId.SHARE -> shareTodaySchedule(
-                                    context = context,
-                                    city = selectedCity,
-                                    times = citySchedule?.first,
-                                    hijriDate = hijriDate.formatDisplay(),
-                                    today = cityToday,
-                                    locale = appLocale
-                                )
+                                QuickActionId.SHARE -> citySchedule?.let { schedule ->
+                                    shareTodaySchedule(
+                                        context = context,
+                                        city = selectedCity,
+                                        times = schedule.first,
+                                        hijriDate = hijriDate.formatDisplay(),
+                                        today = cityToday,
+                                        locale = appLocale
+                                    )
+                                }
                             }
                         },
+                        enabled = action.id != QuickActionId.SHARE ||
+                            canShareTodaySchedule(citySchedule?.first),
                         label = action.label,
                         icon = {
                             // 48dp slot (issue #16): clickableItem has no modifier param, so the
@@ -247,7 +252,7 @@ fun HomeScreen(
             )
             items(list.size) { index ->
                 val type = list[index]
-                val formatted = times.getFormattedTimeFor(type)
+                val formatted = times.displayTime(type)
                 // Highlight only a slot of TODAY's list: once the selector has rolled over to
                 // tomorrow, the target's date is cityToday.plusDays(1) so no card matches — a
                 // type-only match would flag today's already-passed same-type prayer
@@ -303,15 +308,16 @@ private fun quickActionIcon(id: QuickActionId): ImageVector = when (id) {
     QuickActionId.SHARE -> Icons.Default.Share
 }
 
+// Only invoked from the Share quick action, whose enabled state is gated by
+// canShareTodaySchedule — a null or unshareable schedule never reaches this handler.
 private fun shareTodaySchedule(
     context: Context,
     city: City,
-    times: PrayerTimes?,
+    times: PrayerTimes,
     hijriDate: String,
     today: LocalDate,
     locale: Locale = Locale.getDefault()
 ) {
-    if (times == null) return
     val timezoneLabel = AlarmTime.timezoneLabel(city.timezone)
     val text = buildString {
         appendLine("🕌 JADWAL SHOLAT HARI INI")
@@ -319,14 +325,14 @@ private fun shareTodaySchedule(
         appendLine("📅 Masehi: ${today.format(DateTimeFormatter.ofPattern("d MMMM yyyy", locale))}")
         appendLine("🌙 Hijriyah: $hijriDate")
         appendLine("------------------------------")
-        appendLine("• Imsak   : ${times.getFormattedTimeFor(PrayerType.IMSAK)} $timezoneLabel")
-        appendLine("• Subuh   : ${times.getFormattedTimeFor(PrayerType.SUBUH)} $timezoneLabel")
-        appendLine("• Terbit  : ${times.getFormattedTimeFor(PrayerType.TERBIT)} $timezoneLabel")
-        appendLine("• Dhuha   : ${times.getFormattedTimeFor(PrayerType.DHUHA)} $timezoneLabel")
-        appendLine("• Dzuhur  : ${times.getFormattedTimeFor(PrayerType.DZUHUR)} $timezoneLabel")
-        appendLine("• Ashar   : ${times.getFormattedTimeFor(PrayerType.ASHAR)} $timezoneLabel")
-        appendLine("• Maghrib : ${times.getFormattedTimeFor(PrayerType.MAGHRIB)} $timezoneLabel")
-        appendLine("• Isya    : ${times.getFormattedTimeFor(PrayerType.ISYA)} $timezoneLabel")
+        appendLine("• Imsak   : ${times.displayTime(PrayerType.IMSAK)} $timezoneLabel")
+        appendLine("• Subuh   : ${times.displayTime(PrayerType.SUBUH)} $timezoneLabel")
+        appendLine("• Terbit  : ${times.displayTime(PrayerType.TERBIT)} $timezoneLabel")
+        appendLine("• Dhuha   : ${times.displayTime(PrayerType.DHUHA)} $timezoneLabel")
+        appendLine("• Dzuhur  : ${times.displayTime(PrayerType.DZUHUR)} $timezoneLabel")
+        appendLine("• Ashar   : ${times.displayTime(PrayerType.ASHAR)} $timezoneLabel")
+        appendLine("• Maghrib : ${times.displayTime(PrayerType.MAGHRIB)} $timezoneLabel")
+        appendLine("• Isya    : ${times.displayTime(PrayerType.ISYA)} $timezoneLabel")
         appendLine("------------------------------")
         appendLine("Dihitung secara akurat dengan Shollu")
     }

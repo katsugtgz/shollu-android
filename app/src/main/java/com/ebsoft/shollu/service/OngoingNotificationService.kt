@@ -15,6 +15,8 @@ import com.ebsoft.shollu.data.repository.IPrayerRepository
 import com.ebsoft.shollu.receiver.AlarmTime
 import com.ebsoft.shollu.ui.MainActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import java.time.format.DateTimeFormatter
@@ -22,6 +24,26 @@ import java.time.format.DateTimeFormatter
 class OngoingNotificationService : Service() {
 
     companion object {
+        private val _isRunning = MutableStateFlow(false)
+
+        /** Truthful running state: true only while the countdown notification is up. */
+        val isRunning: StateFlow<Boolean> = _isRunning
+
+        // Guards runningSession + the isRunning flag, and serializes the post path
+        // (updateNotification's session check + startForeground) against the stop/removal
+        // path (stopOngoingCountdown / onDestroy) so a cancelled countdown's late post
+        // cannot run startForeground after the removal and resurrect the notification
+        // (foreground + posted while isRunning — and the Settings switch — say off).
+        private val runningLock = Any()
+        private var runningSession = 0
+
+        private fun beginRunningSession(): Int = synchronized(runningLock) { ++runningSession }
+
+        private fun publishStopped() = synchronized(runningLock) {
+            runningSession++
+            _isRunning.value = false
+        }
+
         const val ACTION_START_ONGOING = "com.ebsoft.shollu.ACTION_START_ONGOING"
         const val ACTION_STOP_ONGOING = "com.ebsoft.shollu.ACTION_STOP_ONGOING"
         const val ACTION_UPDATE_ONGOING = "com.ebsoft.shollu.ACTION_UPDATE_ONGOING"
@@ -74,6 +96,7 @@ class OngoingNotificationService : Service() {
     private fun startOngoingCountdown() {
         countdownJob?.cancel()
         postingEnabled = true
+        val session = beginRunningSession()
         countdownJob = serviceScope.launch {
             combine(
                 preferences.isOngoingNotificationEnabled,
@@ -139,7 +162,8 @@ class OngoingNotificationService : Service() {
                         title = "Menuju $displayNameWithDay ($formattedPrayerTime ${AlarmTime.timezoneLabel(config.city.timezone)})",
                         content = "${config.city.name} • Shollu Pengingat Sholat",
                         subText = "Hitung Mundur Sholat",
-                        targetEpochMillis = targetEpochMillis
+                        targetEpochMillis = targetEpochMillis,
+                        session = session
                     )
 
                     // Real-instant countdown: epoch difference, immune to zone mismatches.
@@ -156,7 +180,8 @@ class OngoingNotificationService : Service() {
         title: String,
         content: String,
         subText: String,
-        targetEpochMillis: Long
+        targetEpochMillis: Long,
+        session: Int
     ) {
         if (!postingEnabled) return
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
@@ -239,21 +264,35 @@ class OngoingNotificationService : Service() {
         }
 
         if (!postingEnabled) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        // postingEnabled is only a cheap non-atomic pre-gate; the locked session check
+        // below is the authoritative one. A session superseded by stopOngoingCountdown /
+        // onDestroy skips its startForeground entirely instead of resurrecting the
+        // notification the removal path just took down.
+        synchronized(runningLock) {
+            if (runningSession == session) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+                _isRunning.value = true
+            }
         }
     }
 
     private fun stopOngoingCountdown() {
         postingEnabled = false
         countdownJob?.cancel()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        // Same lock as the post path: the session bump + notification removal happen
+        // atomically against updateNotification's session check + startForeground.
+        synchronized(runningLock) {
+            publishStopped()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
         stopSelf()
     }
 
@@ -276,13 +315,16 @@ class OngoingNotificationService : Service() {
     override fun onDestroy() {
         postingEnabled = false
         countdownJob?.cancel()
-        try {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } catch (_: Exception) {
-            // Already torn down, or never started as FGS.
+        synchronized(runningLock) {
+            publishStopped()
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (_: Exception) {
+                // Already torn down, or never started as FGS.
+            }
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(NOTIFICATION_ID)
         }
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-            .cancel(NOTIFICATION_ID)
         serviceScope.cancel()
         super.onDestroy()
     }

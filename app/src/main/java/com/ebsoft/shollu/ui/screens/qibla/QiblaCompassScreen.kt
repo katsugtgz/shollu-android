@@ -85,7 +85,12 @@ fun QiblaCompassScreen(
 ) {
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }
-    var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_HIGH) }
+    // Mirrors [accuracyRegistry].effective (the minimum across the selected sensors) so
+    // accuracy changes recompose. Starts UNRELIABLE and is reset to UNRELIABLE on every
+    // ON_START: until the sensor reports its accuracy we do not yet know the compass is
+    // calibrated, so the calibration hint (not confirmation) is the default.
+    var sensorAccuracy by remember { mutableIntStateOf(UNRELIABLE) }
+    val accuracyRegistry = remember { SensorAccuracyRegistry() }
     // Starts false: registration is owned by the lifecycle observer below (its addObserver
     // catch-up dispatch delivers ON_START when already STARTED), never by effect-body code.
     var sensorAvailable by remember { mutableStateOf(false) }
@@ -188,21 +193,12 @@ fun QiblaCompassScreen(
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-                sensorAccuracy = accuracy
+                if (sensor == null) return
+                // Per-sensor-type tracking: a HIGH accelerometer report must not mask a
+                // LOW magnetic one — the gate sees the minimum of what has reported.
+                accuracyRegistry.onAccuracyChanged(sensor.type, accuracy)
+                sensorAccuracy = accuracyRegistry.effective
             }
-        }
-
-        // register/unregister helpers — the same loop serves the initial START (the
-        // observer's addObserver catch-up dispatch delivers ON_START synchronously when
-        // already STARTED), every subsequent START, and ON_STOP teardown.
-        fun registerAll(): Boolean {
-            var any = false
-            for (sensor in sensors) {
-                if (sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)) {
-                    any = true
-                }
-            }
-            return any
         }
 
         fun unregisterAll() {
@@ -211,13 +207,53 @@ fun QiblaCompassScreen(
             }
         }
 
+        // register/unregister helpers — the same loop serves the initial START (the
+        // observer's addObserver catch-up dispatch delivers ON_START synchronously when
+        // already STARTED), every subsequent START, and ON_STOP teardown.
+        fun registerAll(): Boolean {
+            var rotationVectorRegistered = false
+            var accelRegistered = false
+            var magRegistered = false
+            var orientationRegistered = false
+            for (sensor in sensors) {
+                val registered = sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+                when (sensor.type) {
+                    Sensor.TYPE_ROTATION_VECTOR -> rotationVectorRegistered = registered
+                    Sensor.TYPE_ACCELEROMETER -> accelRegistered = registered
+                    Sensor.TYPE_MAGNETIC_FIELD, Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED -> magRegistered = registered
+                    @Suppress("DEPRECATION")
+                    Sensor.TYPE_ORIENTATION -> orientationRegistered = registered
+                }
+            }
+            // Availability must be truthful (QiblaSensorGate): a half-registered accel+mag
+            // pair is not a compass — both halves must have registered, while the
+            // single-sensor sources (rotation vector, orientation) stand alone.
+            val ok = compassRegistrationOk(
+                rotationVectorRegistered,
+                accelRegistered,
+                magRegistered,
+                orientationRegistered
+            )
+            if (!ok) {
+                // A half-registered pair must not keep streaming: the half that registered
+                // would fire ~60Hz events while the compass is reported unavailable.
+                unregisterAll()
+            }
+            return ok
+        }
+
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
                     // Drop state cached from the previous session before re-registering:
-                    // stale counterpart samples (accel/mag pair) and the pre-stop azimuth
-                    // must not read as fresh data for the new session.
+                    // stale counterpart samples (accel/mag pair), the previous session's
+                    // accuracy reports, and the pre-stop azimuth must not read as fresh
+                    // data for the new session. The composition survives tab switches, so
+                    // this reset — not the initial remember — owns the "starts UNRELIABLE"
+                    // invariant on every resume.
                     listener.reset()
+                    accuracyRegistry.reset()
+                    sensorAccuracy = accuracyRegistry.effective
                     freshSample = false
                     sensorAvailable = registerAll()
                 }
@@ -243,7 +279,7 @@ fun QiblaCompassScreen(
     // Qibla bearing; confirmation is suppressed while no sensor is feeding azimuth updates.
     val trueAzimuth = QiblaCalculator.qiblaTrueBearingFromMagnetic(azimuth.toDouble(), declination.toDouble()).toFloat()
     val diff = (trueAzimuth - qiblaBearing + 360f) % 360f
-    val isAligned = sensorAvailable && freshSample && (diff < 3f || diff > 357f)
+    val isAligned = freshSample && qiblaConfirmAllowed(sensorAvailable, sensorAccuracy, diff)
 
     val animatedAzimuth by animateFloatAsState(
         targetValue = -azimuth,
@@ -390,6 +426,13 @@ fun QiblaCompassScreen(
                         )
                     }
                 }
+            } else if (sensorAccuracy == UNRELIABLE || sensorAccuracy == LOW) {
+                Text(
+                    text = "Kalibrasi kompas",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             } else if (isAligned) {
                 Card(
                     shape = MaterialTheme.shapes.medium,

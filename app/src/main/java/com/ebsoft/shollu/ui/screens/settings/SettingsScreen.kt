@@ -1,10 +1,14 @@
 package com.ebsoft.shollu.ui.screens.settings
 
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -70,12 +74,29 @@ fun SettingsScreen(
     val settingsScope = (context.applicationContext as? SholluApplication)?.applicationScope
         ?: rememberCoroutineScope()
 
-    val isOngoingEnabled by preferences.isOngoingNotificationEnabled.collectAsState(initial = true)
+    val isOngoingRunning by OngoingNotificationService.isRunning.collectAsState()
     val isMaxVibrationEnabled by preferences.isMaxVibrationEnabled.collectAsState(initial = true)
     val isPrePrayerEnabled by preferences.isPrePrayerAlertEnabled.collectAsState(initial = true)
     val prePrayerMinutes by preferences.prePrayerMinutes.collectAsState(initial = 10)
     // Truthful dropzone running state, maintained by the service itself.
     val isFloatingDropzoneRunning by FloatingDropzoneService.isRunning.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var canScheduleExactAlarms by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner, context) {
+        fun readCanScheduleExactAlarms(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+            val alarmManager = context.getSystemService(AlarmManager::class.java)
+            return alarmManager?.canScheduleExactAlarms() == true
+        }
+        canScheduleExactAlarms = readCanScheduleExactAlarms()
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                canScheduleExactAlarms = readCanScheduleExactAlarms()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     var showMethodDialog by remember { mutableStateOf(false) }
     var showAsrDialog by remember { mutableStateOf(false) }
@@ -134,17 +155,28 @@ fun SettingsScreen(
                         OngoingNotificationService.ACTION_STOP_ONGOING
                     }
                 }
-                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
+                try {
+                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                } catch (_: Exception) {
+                    if (ongoingStartFailed(enabled, OngoingNotificationService.isRunning.value)) {
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(
+                                context,
+                                "Hitung mundur tidak dimulai.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 }
             },
             startVibrationTest = {
                 val intent = Intent(context, VibrationAlarmService::class.java).apply {
                     action = VibrationAlarmService.ACTION_START_VIBRATION
-                    putExtra(VibrationAlarmService.EXTRA_PRAYER_NAME, "Uji Coba Getar Shollu")
-                    putExtra(VibrationAlarmService.EXTRA_PRAYER_TIME, "12:00")
+                    putExtra(VibrationAlarmService.EXTRA_IS_VIBRATION_TEST, vibrationTestSpec().isTest)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
@@ -283,7 +315,6 @@ fun SettingsScreen(
     // system screens the remediation intents open. The resume refresh only PROBES; it never
     // auto-fires a remediation intent.
     LaunchedEffect(Unit) { refreshAlarmHealth() }
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) refreshAlarmHealth()
@@ -385,13 +416,23 @@ fun SettingsScreen(
         item {
             SettingsSectionHeader(title = "Notifikasi & Alarm Status Bar")
             SettingsCard {
+                if (AlarmScheduler.needsExactAlarmPrompt(Build.VERSION.SDK_INT, canScheduleExactAlarms)) {
+                    SettingsRow(
+                        icon = Icons.Default.Alarm,
+                        title = "Alarm tepat tidak diizinkan",
+                        subtitle = "Ketuk untuk mengizinkan alarm dan pengingat tepat waktu.",
+                        onClick = openExactAlarmSettings
+                    )
+                    SettingsDivider()
+                }
+
                 SettingsRow(
                     icon = Icons.Default.VerticalAlignBottom,
                     title = "Status Bar Countdown Berkelanjutan",
                     subtitle = "Muncul di notification shade; hitung mundur live; tidak bisa swipe; Matikan atau saklar ini.",
                     trailing = {
                         Switch(
-                            checked = isOngoingEnabled,
+                            checked = ongoingSwitchChecked(isOngoingRunning),
                             onCheckedChange = { checked ->
                                 launchSetting { actions.setOngoingNotification(checked) }
                             }

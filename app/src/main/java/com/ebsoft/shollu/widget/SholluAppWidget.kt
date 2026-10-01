@@ -154,15 +154,15 @@ class SholluAppWidget : GlanceAppWidget() {
                     modifier = GlanceModifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    PrayerMiniItem(palette, "Sub", prayerTimes.getFormattedTimeFor(PrayerType.SUBUH))
+                    PrayerMiniItem(palette, "Sub", prayerTimes.displayTime(PrayerType.SUBUH))
                     Spacer(modifier = GlanceModifier.width(8.dp))
-                    PrayerMiniItem(palette, "Dzu", prayerTimes.getFormattedTimeFor(PrayerType.DZUHUR))
+                    PrayerMiniItem(palette, "Dzu", prayerTimes.displayTime(PrayerType.DZUHUR))
                     Spacer(modifier = GlanceModifier.width(8.dp))
-                    PrayerMiniItem(palette, "Ash", prayerTimes.getFormattedTimeFor(PrayerType.ASHAR))
+                    PrayerMiniItem(palette, "Ash", prayerTimes.displayTime(PrayerType.ASHAR))
                     Spacer(modifier = GlanceModifier.width(8.dp))
-                    PrayerMiniItem(palette, "Mag", prayerTimes.getFormattedTimeFor(PrayerType.MAGHRIB))
+                    PrayerMiniItem(palette, "Mag", prayerTimes.displayTime(PrayerType.MAGHRIB))
                     Spacer(modifier = GlanceModifier.width(8.dp))
-                    PrayerMiniItem(palette, "Isy", prayerTimes.getFormattedTimeFor(PrayerType.ISYA))
+                    PrayerMiniItem(palette, "Isy", prayerTimes.displayTime(PrayerType.ISYA))
                 }
             }
         }

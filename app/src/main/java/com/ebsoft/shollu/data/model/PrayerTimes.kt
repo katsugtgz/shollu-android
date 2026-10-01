@@ -42,6 +42,20 @@ data class PrayerTimes(
     }
 
     /**
+     * Clock shown to the user. Polar-invalid Subuh and Isya are an em dash, and Imsak
+     * follows Subuh (it is fajr minus 10 minutes, so the same invalid hour). Every other
+     * type, and a valid Subuh/Isya/Imsak, is the raw HH:mm from [getFormattedTimeFor].
+     */
+    fun displayTime(type: PrayerType): String {
+        val hidden = when (type) {
+            PrayerType.SUBUH, PrayerType.IMSAK -> !isSubuhValid
+            PrayerType.ISYA -> !isIsyaValid
+            else -> false
+        }
+        return if (hidden) "—" else getFormattedTimeFor(type)
+    }
+
+    /**
      * The five major prayers of this day with polar-invalid Subuh/Isya placeholders removed —
      * the same filter the alarm scheduler applies before arming (isPrayerValid). A placeholder
      * is only a display value and must never be "next". Imsak/Terbit/Dhuha are informational
@@ -97,3 +111,6 @@ data class PrayerTimes(
         internal val HM_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     }
 }
+
+/** Share is allowed for any computed schedule, including polar-invalid hours. */
+fun canShareTodaySchedule(times: PrayerTimes?): Boolean = times != null

@@ -40,6 +40,9 @@ import com.ebsoft.shollu.ui.screens.qibla.QiblaCompassScreen
 import com.ebsoft.shollu.ui.screens.scheduler.SchedulerScreen
 import com.ebsoft.shollu.ui.screens.settings.LocationPickerDialog
 import com.ebsoft.shollu.ui.screens.settings.SettingsScreen
+import com.ebsoft.shollu.ui.screens.settings.gpsTapLocationDenied
+import com.ebsoft.shollu.ui.screens.settings.notificationGrantIsDenied
+import com.ebsoft.shollu.ui.screens.settings.shouldAutoDetectLocation
 import com.ebsoft.shollu.ui.theme.SholluTheme
 import com.ebsoft.shollu.ui.util.exactAlarmSettingsIntent
 import com.ebsoft.shollu.data.update.InstallResult
@@ -56,6 +59,9 @@ import kotlinx.coroutines.withContext
 
 import java.util.Locale
 
+/** Persisted so a recreation while the location dialog is open keeps the GPS tap alive. */
+private const val STATE_USER_ASKED_FOR_GPS = "userAskedForGps"
+
 class MainActivity : ComponentActivity() {
 
     private var fusedLocationClient: FusedLocationProviderClient? = null
@@ -67,14 +73,33 @@ class MainActivity : ComponentActivity() {
     private var showExactAlarmPrompt by mutableStateOf(false)
     private var awaitingExactAlarmGrant = false
 
+    /** Set only by the GPS button (or restored from saved state). Cold-start [requestAppPermissions] leaves this false. */
+    private var userAskedForGps = false
+
+    /** True only for the launch that included POST_NOTIFICATIONS. Missing map entry is then a denial. */
+    private var notificationPermissionRequested = false
+
+    /** Activity-owned so [processLocation] can close the picker after a successful fix. */
+    private var showLocationPicker by mutableStateOf(false)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val notifGranted = permissions[Manifest.permission.POST_NOTIFICATIONS] ?: true
-        val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-        if (fineLocationGranted || coarseLocationGranted) {
+        val notifGranted = permissions[Manifest.permission.POST_NOTIFICATIONS]
+        if (notificationGrantIsDenied(notificationPermissionRequested, notifGranted)) {
+            Toast.makeText(this, "Notifikasi tidak aktif.", Toast.LENGTH_SHORT).show()
+        }
+        notificationPermissionRequested = false
+
+        val locationGranted =
+            permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        val askedForGps = userAskedForGps
+        userAskedForGps = false
+        if (shouldAutoDetectLocation(askedForGps, locationGranted)) {
             autoDetectLocation()
+        } else if (gpsTapLocationDenied(askedForGps, locationGranted)) {
+            gpsFixFailed("Lokasi tidak diizinkan.")
         }
     }
 
@@ -92,6 +117,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The permission callback can arrive in a recreated Activity (dialog open across
+        // rotation/process death) — without this the GPS tap is lost and nothing runs.
+        userAskedForGps = savedInstanceState?.getBoolean(STATE_USER_ASKED_FOR_GPS, false) ?: false
         requestAppPermissions()
         if (needsExactAlarmPromptNow()) {
             showExactAlarmPrompt = true
@@ -123,7 +151,6 @@ class MainActivity : ComponentActivity() {
             var homeScheduleCache by remember {
                 mutableStateOf<ScheduleEntry?>(null)
             }
-            var showLocationPicker by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
                 val check = withContext(Dispatchers.IO) {
@@ -275,7 +302,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onAutoGpsClick = {
-                                autoDetectLocation()
+                                beginUserGpsDetect()
                             },
                             onDismiss = { showLocationPicker = false }
                         )
@@ -329,6 +356,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_USER_ASKED_FOR_GPS, userAskedForGps)
     }
 
     override fun onResume() {
@@ -395,6 +427,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                notificationPermissionRequested = true
             }
         }
         val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -423,12 +456,39 @@ class MainActivity : ComponentActivity() {
         startActivity(exactAlarmSettingsIntent(packageName))
     }
 
+    private fun beginUserGpsDetect() {
+        val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fineGranted || coarseGranted) {
+            autoDetectLocation()
+            return
+        }
+        notificationPermissionRequested = false
+        userAskedForGps = true
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
+
+    /**
+     * A GPS fix terminated without a result: surface the reason and close the picker so
+     * it cannot linger as a tap-blocked list (the dialog's gpsFixPending only clears on
+     * disposal). Harmless when no picker is open.
+     */
+    private fun gpsFixFailed(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        showLocationPicker = false
+    }
+
     private fun autoDetectLocation() {
         val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
         if (!fineGranted && !coarseGranted) {
-            Toast.makeText(this, "Izin lokasi diperlukan untuk deteksi otomatis", Toast.LENGTH_SHORT).show()
+            gpsFixFailed("Izin lokasi diperlukan untuk deteksi otomatis")
             return
         }
 
@@ -455,8 +515,14 @@ class MainActivity : ComponentActivity() {
     private fun requestCurrentLocationFallback() {
         val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted && !coarseGranted) return
-        val client = fusedLocationClient ?: return
+        if (!fineGranted && !coarseGranted) {
+            gpsFixFailed("Izin lokasi diperlukan untuk deteksi otomatis")
+            return
+        }
+        val client = fusedLocationClient ?: run {
+            gpsFixFailed("Gagal mendeteksi lokasi")
+            return
+        }
 
         try {
             client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
@@ -504,11 +570,13 @@ class MainActivity : ComponentActivity() {
                 if (bestLocation != null) {
                     processLocation(bestLocation)
                 } else {
-                    Toast.makeText(this, "Tidak dapat mendeteksi lokasi saat ini", Toast.LENGTH_SHORT).show()
+                    gpsFixFailed("Tidak dapat mendeteksi lokasi saat ini")
                 }
+            } else {
+                gpsFixFailed("Gagal mendeteksi lokasi")
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Gagal mendeteksi lokasi", Toast.LENGTH_SHORT).show()
+            gpsFixFailed("Gagal mendeteksi lokasi")
         }
     }
 
@@ -564,6 +632,7 @@ class MainActivity : ComponentActivity() {
 
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@MainActivity, "Lokasi terdeteksi: $finalCityName", Toast.LENGTH_SHORT).show()
+                showLocationPicker = false
             }
         }
     }
