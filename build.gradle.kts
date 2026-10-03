@@ -4,7 +4,7 @@ buildscript {
     // AGP 9 built-in Kotlin: AGP carries a runtime KGP floor (2.2.10) and auto-applies it.
     // Declaring KGP here raises the effective compiler to 2.4.10 (per AGP 9 release notes).
     dependencies {
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.20")
     }
 
     // Dependabot alerts 1-57: force patched versions of AGP plugin-classpath transitives.
