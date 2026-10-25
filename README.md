@@ -1,5 +1,7 @@
 <div align="center">
 
+![Shollu showcase](docs/shollu-showcase.gif)
+
 # 🕌 Shollu for Android
 ### *Modern Islamic Prayer Reminder & Islamic Scheduler*
 
